@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
-import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container, Modal, ActionIcon } from '@mantine/core';
+import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container } from '@mantine/core';
 import { TimeInput, DateTimePicker } from '@mantine/dates';
 import { format, parse, differenceInMinutes, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
-import { TimerState, TimerSession } from '../types';
+import { TimerState, TimerSession, SessionPause } from '../types';
 import { IconTrash, IconEdit, IconClock, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
-import { supabase, signInAnonymously } from '../lib/supabase';
-import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../lib/supabase';
 
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
@@ -684,6 +683,10 @@ export function Timer() {
     fetchSessions();
   }, []);
 
+  const currentSession = state.currentSession!; // Add non-null assertion
+  // OR
+  if (!state.currentSession) return null;
+
   return (
     <Container size="lg" px={{ base: 20, sm: 40 }} py={60}>
       <Group position="apart" mb={40}>
@@ -745,7 +748,12 @@ export function Timer() {
                   STARTED TIME
                 </Text>
                 {editingSession?.id === state.currentSession.id && editingSession.field === 'startTime' ? (
-                  <Group spacing={4} direction="column" style={{ width: '100%' }}>
+                  <Group
+                    style={{ 
+                      flexDirection: 'row' as const,
+                      width: '100%'
+                    }}
+                  >
                     <div style={{ width: '100%' }}>
                       <input
                         type="datetime-local"
@@ -807,7 +815,7 @@ export function Timer() {
                       '&:hover': { 
                         color: '#00b5a9',
                         textDecoration: 'underline' 
-                      } as any
+                      } as React.CSSProperties
                     }}
                   >
                     {format(state.currentSession.startTime, 'h:mm a')}
@@ -856,7 +864,9 @@ export function Timer() {
                 </Text>
                 <Text size="md" color="dimmed" style={{ marginTop: 4 }}>
                   {selectedCurrency.flag} {selectedCurrency.symbol}
-                  {(state.currentSession?.earnings * exchangeRate[selectedCurrency.code]).toFixed(2)}
+                  {Math.round(
+                    (state.currentSession?.earnings * exchangeRate[`USD${selectedCurrency.code}`]) * 100
+                  ) / 100}
                 </Text>
               </>
             )}
