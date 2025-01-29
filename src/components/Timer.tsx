@@ -7,6 +7,7 @@ import { TimerState, TimerSession } from '../types';
 import { CustomButton } from './CustomButton';
 import { PauseInterval, EditValue, EditingSession } from '../types/timer';
 import { supabase } from '../lib/supabase';
+import { IconTrash, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
 
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
@@ -39,6 +40,10 @@ const formatDuration = (seconds: number): string => {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const isEditValue = (value: unknown): value is EditValue => {
+  return typeof value === 'object' && value !== null && ('start' in value || 'end' in value);
 };
 
 export function Timer() {
@@ -434,6 +439,8 @@ export function Timer() {
   useEffect(() => {
     fetchSessions();
   }, []);
+
+  const currentSession = state.currentSession!;
 
   return (
     <Container size="lg" px={{ base: 20, sm: 40 }} py={60}>

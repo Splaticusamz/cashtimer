@@ -1,6 +1,8 @@
 import { Button, ButtonProps } from '@mantine/core';
-import { forwardRef } from 'react';
+import { forwardRef, ComponentPropsWithoutRef } from 'react';
 
-export const CustomButton = forwardRef<HTMLButtonElement, ButtonProps>((props, ref) => (
+type CustomButtonProps = ComponentPropsWithoutRef<'button'> & ButtonProps;
+
+export const CustomButton = forwardRef<HTMLButtonElement, CustomButtonProps>((props, ref) => (
   <Button ref={ref} {...props} />
 )); 
