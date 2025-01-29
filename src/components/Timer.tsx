@@ -7,6 +7,7 @@ import { TimerState, TimerSession, SessionPause } from '../types';
 import { IconTrash, IconEdit, IconClock, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
 import { supabase } from '../lib/supabase';
 
+
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
 type Currency = {

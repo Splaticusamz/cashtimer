@@ -43,4 +43,4 @@ export interface TimerSession {
 export interface SessionPause {
   start_time: string;
   end_time: string | null;
-} 
+}
