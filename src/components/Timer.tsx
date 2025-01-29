@@ -900,13 +900,13 @@ export function Timer() {
                     color="#ff4757" 
                     size="lg"
                     radius="xl"
-                    style={{ 
+                    left={<IconPlayerStop size={20} />}
+                    style={{
                       flex: 1,
-                      background: 'linear-gradient(135deg, #ff4757 0%, #ff6b81 100%)',
-                      border: 'none',
-                      boxShadow: '0 4px 24px rgba(255, 71, 87, 0.2)'
+                      background: '#1A1B1E',
+                      border: '1px solid #2C2E33',
+                      boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
                     }}
-                    leftSection={<IconPlayerStop size={20} />}
                   >
                     Stop
                   </Button>
@@ -933,13 +933,13 @@ export function Timer() {
                     color="#ff4757" 
                     size="lg"
                     radius="xl"
-                    style={{ 
+                    left={<IconPlayerStop size={20} />}
+                    style={{
                       flex: 1,
-                      background: 'linear-gradient(135deg, #ff4757 0%, #ff6b81 100%)',
-                      border: 'none',
-                      boxShadow: '0 4px 24px rgba(255, 71, 87, 0.2)'
+                      background: '#1A1B1E',
+                      border: '1px solid #2C2E33',
+                      boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
                     }}
-                    leftSection={<IconPlayerStop size={20} />}
                   >
                     Stop
                   </Button>
@@ -1370,12 +1370,13 @@ export function Timer() {
                             ))}
 
                             {editingSession?.id === session.id && editingSession.field === 'pause-new' ? (
-                              <Group spacing={8} style={{ 
-                                padding: '12px 16px',
-                                background: '#1A1B1E',
-                                borderRadius: '8px',
-                                border: '1px solid #2C2E33'
-                              }}>
+                              <Group 
+                                spacing={8}
+                                style={{ 
+                                  width: '100%',
+                                  flexDirection: 'column'
+                                }}
+                              >
                                 <input
                                   type="time"
                                   defaultValue={editingSession.tempValue?.start}
