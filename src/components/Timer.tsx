@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
-import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container } from '@mantine/core';
+import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container, ActionIcon } from '@mantine/core';
 import { TimeInput, DateTimePicker } from '@mantine/dates';
 import { format, parse, differenceInMinutes, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
@@ -64,7 +64,6 @@ export function Timer() {
   });
   
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [isEditingTime, setIsEditingTime] = useState(false);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [completedSession, setCompletedSession] = useState<TimerSession | null>(null);
   const [editingSession, setEditingSession] = useState<EditingSession | null>(null);
@@ -93,55 +92,6 @@ export function Timer() {
     // Convert to hours and calculate earnings
     return (activeTime / 3600000) * session.hourlyRate;
   }, []);
-
-  const adjustCurrentTime = (minutes: number) => {
-    if (!state.currentSession) return;
-    setState(prev => ({
-      ...prev,
-      currentSession: {
-        ...prev.currentSession!,
-        startTime: new Date(prev.currentSession!.startTime.getTime() + (minutes * 60000))
-      }
-    }));
-  };
-
-  const updateStartTime = (newTime: string) => {
-    if (!state.currentSession) return;
-    
-    try {
-      const [hours, minutes] = newTime.split(':').map(Number);
-      const currentDate = new Date(state.currentSession.startTime);
-      currentDate.setHours(hours);
-      currentDate.setMinutes(minutes);
-
-      setState(prev => {
-        if (!prev.currentSession) return prev;
-        
-        // Recalculate earnings with new start time
-        const totalTime = prev.currentSession.endTime ? 
-          (prev.currentSession.endTime.getTime() - currentDate.getTime()) : 
-          (new Date().getTime() - currentDate.getTime());
-        const breakTime = prev.currentSession.pauses.reduce((acc, pause) => {
-          const pauseEnd = pause.endTime || new Date();
-          return acc + (pauseEnd.getTime() - pause.startTime.getTime());
-        }, 0);
-        const activeTime = totalTime - breakTime;
-        const newEarnings = (activeTime / 3600000) * prev.currentSession.hourlyRate;
-
-        return {
-          ...prev,
-          currentSession: {
-            ...prev.currentSession,
-            startTime: currentDate,
-            earnings: newEarnings
-          }
-        };
-      });
-    } catch (e) {
-      console.error('Invalid time format');
-    }
-    setIsEditingTime(false);
-  };
 
   useEffect(() => {
     let intervalId: number;
@@ -921,7 +871,7 @@ export function Timer() {
                       }
                     }}
                   >
-                    Stop
+                    Stop Timer
                   </Button>
                 </>
               ) : (
@@ -955,7 +905,7 @@ export function Timer() {
                       }
                     }}
                   >
-                    Stop
+                    Stop Timer
                   </Button>
                 </>
               )
