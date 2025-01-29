@@ -552,6 +552,8 @@ export function Timer() {
 
   // Add this function before the return statement
   const handleStartTimeEdit = async (sessionId: string, newTimeStr: string) => {
+    const session = state.sessions.find(s => s.id === sessionId);
+    if (!session) return;
     const newDate = new Date(newTimeStr);
     if (!isNaN(newDate.getTime())) {
       const { error } = await supabase
@@ -578,6 +580,8 @@ export function Timer() {
 
   // Add this function alongside other handlers
   const handleEndTimeEdit = async (sessionId: string, newTimeStr: string) => {
+    const session = state.sessions.find(s => s.id === sessionId);
+    if (!session) return;
     const newDate = new Date(newTimeStr);
     if (!isNaN(newDate.getTime())) {
       const { error } = await supabase
@@ -711,14 +715,12 @@ export function Timer() {
             </Text>
             <NumberInput
               value={state.hourlyRate}
-              onChange={(val) => setState(prev => ({ ...prev, hourlyRate: val || 0 }))}
+              onChange={(val) => setState(prev => ({ ...prev, hourlyRate: Number(val) || 0 }))}
               min={0}
-              precision={2}
+              step={0.01}
               disabled={state.isRunning}
               size="md"
               hideControls
-              leftSectionWidth={40}
-              
               styles={{
                 input: {
                   fontSize: '1.8rem',
@@ -805,7 +807,7 @@ export function Timer() {
                       '&:hover': { 
                         color: '#00b5a9',
                         textDecoration: 'underline' 
-                      }
+                      } as any
                     }}
                   >
                     {format(state.currentSession.startTime, 'h:mm a')}
@@ -900,7 +902,7 @@ export function Timer() {
                     color="#ff4757" 
                     size="lg"
                     radius="xl"
-                    left={<IconPlayerStop size={20} />}
+                    icon={<IconPlayerStop size={20} />}
                     style={{
                       flex: 1,
                       background: '#1A1B1E',
@@ -933,7 +935,7 @@ export function Timer() {
                     color="#ff4757" 
                     size="lg"
                     radius="xl"
-                    left={<IconPlayerStop size={20} />}
+                    icon={<IconPlayerStop size={20} />}
                     style={{
                       flex: 1,
                       background: '#1A1B1E',
@@ -1374,7 +1376,8 @@ export function Timer() {
                                 spacing={8}
                                 style={{ 
                                   width: '100%',
-                                  flexDirection: 'column'
+                                  display: 'flex',
+                                  flexDirection: 'column' as const
                                 }}
                               >
                                 <input
@@ -1625,15 +1628,16 @@ export function Timer() {
 }
 
 const tableHeaderStyle = {
-  padding: '18px 24px',
-  color: '#909296',
-  fontWeight: 700,
-  fontSize: '0.85rem',
-  textTransform: 'uppercase',
+  width: '100%',
+  padding: '12px 16px',
+  color: '#C1C2C5',
+  fontWeight: 500,
+  fontSize: '0.9rem',
+  textTransform: 'uppercase' as const,
   letterSpacing: '0.1em',
-  background: '#141517',
-  borderBottom: '2px solid #2C2E33',
-  backdropFilter: 'blur(8px)',
+  background: '#1A1B1E',
+  borderBottom: '1px solid #2C2E33',
+  backdropFilter: 'blur(10px)',
   textAlign: 'center' as const
 };
 
