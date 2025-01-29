@@ -1,18 +1,26 @@
-export interface PauseInterval {
+export type PauseInterval = {
   startTime: Date;
-  endTime?: Date;
-}
+  endTime: Date | null;
+};
 
-export interface EditValue {
-  start: string;
-  end: string;
-  datetime?: string;
-}
+export type TimerSession = {
+  id: string;
+  startTime: Date;
+  endTime: Date | null;
+  hourlyRate: number;
+  earnings: number;
+  pauses: PauseInterval[];
+};
+
+export type EditValue = {
+  start?: string;
+  end?: string;
+};
 
 export type EditingSession = {
   id: string;
-  field: 'startTime' | 'endTime' | `pause-${number}` | 'pause-new';
-  tempValue?: string | EditValue;
+  field: string;
+  tempValue: EditValue | string;
 };
 
 const isEditValue = (value: unknown): value is EditValue => {

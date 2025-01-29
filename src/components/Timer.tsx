@@ -500,50 +500,47 @@ export function Timer() {
                   STARTED TIME
                 </Text>
                 {editingSession?.id === state.currentSession.id && editingSession.field === 'startTime' ? (
-                  <Group
-                    style={{ 
-                      flexDirection: 'row' as const,
-                      width: '100%'
-                    }}
-                  >
-                    <div style={{ width: '100%' }}>
-                      <input
-                        type="datetime-local"
-                        defaultValue={format(state.currentSession.startTime, "yyyy-MM-dd'T'HH:mm")}
-                        style={{
-                          width: '100%',
-                          background: '#141517',
-                          border: '1px solid #2C2E33',
-                          borderRadius: '8px',
-                          padding: '8px 12px',
-                          color: '#C1C2C5',
-                          fontSize: '0.95rem'
-                        }}
-                        onChange={(e) => {
-                          setEditingSession(prev => prev ? {
+                  <Stack spacing={4} style={{ width: '100%' }}>
+                    <input
+                      type="datetime-local"
+                      defaultValue={format(state.currentSession.startTime, "yyyy-MM-dd'T'HH:mm")}
+                      style={{
+                        width: '100%',
+                        background: '#141517',
+                        border: '1px solid #2C2E33',
+                        borderRadius: '8px',
+                        padding: '8px 12px',
+                        color: '#C1C2C5',
+                        fontSize: '0.95rem'
+                      }}
+                      onChange={(e) => {
+                        setEditingSession(prev => {
+                          if (!prev) return null;
+                          const tempValue = typeof prev.tempValue === 'string' ? { start: prev.tempValue } : prev.tempValue;
+                          return {
                             ...prev,
-                            tempValue: { 
-                              ...prev.tempValue as EditValue,
+                            tempValue: {
+                              ...tempValue,
                               start: e.target.value,
-                              end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
+                              end: tempValue.end || format(new Date(), "HH:mm")
                             }
-                          } : null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleSave('start', state.currentSession);
-                          }
-                        }}
-                        autoFocus
-                      />
-                    </div>
-                    <Group spacing={4} mt={8}>
+                          };
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          state.currentSession && handleSave('start', state.currentSession);
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <Group spacing={4}>
                       <Button 
                         size="xs" 
                         variant="subtle" 
                         color="teal"
-                        onClick={() => handleSave('start', state.currentSession)}
+                        onClick={() => state.currentSession && handleSave('start', state.currentSession)}
                       >
                         Save
                       </Button>
@@ -556,19 +553,23 @@ export function Timer() {
                         Cancel
                       </Button>
                     </Group>
-                  </Group>
+                  </Stack>
                 ) : (
                   <Text 
                     size="lg" 
                     weight={600}
-                    onClick={() => setEditingSession({ id: state.currentSession.id, field: 'startTime' })}
-                    style={{ 
-                      cursor: 'pointer', 
-                      '&:hover': { 
-                        color: '#00b5a9',
-                        textDecoration: 'underline' 
-                      } as any
-                    }}
+                    onClick={() => setEditingSession({ 
+                      id: state.currentSession?.id || '', 
+                      field: 'startTime',
+                      tempValue: format(state.currentSession?.startTime || new Date(), "HH:mm")
+                    })}
+                    sx={(theme) => ({
+                      cursor: 'pointer',
+                      '&:hover': {
+                        color: theme.colors.teal[4],
+                        textDecoration: 'underline'
+                      }
+                    })}
                   >
                     {format(state.currentSession.startTime, 'h:mm a')}
                   </Text>
@@ -714,542 +715,613 @@ export function Timer() {
           <Paper 
             withBorder 
             p={40} 
-            style={{ 
-              borderColor: '#2C2E33',
-              background: 'linear-gradient(155deg, #1A1B1E 0%, #141517 100%)',
+            sx={(theme) => ({
+              position: 'relative',
               overflow: 'hidden'
-            }}
+            })}
           >
-            <Table 
-              striped 
-              highlightOnHover
-              style={{
-                tableLayout: 'fixed',
-                width: '100%',
-                '--mantine-color-dark-filled': '#0e0f11',
-                '--mantine-color-dark-filled-hover': '#141517',
-                '&:hover': {
-                  color: '#00b5a9'
-                }
-              } as any}
-            >
-              <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                <tr>
-                  <th style={{ ...tableHeaderStyle, width: '80px' }}>Breaks</th>
-                  <th style={{ ...tableHeaderStyle, width: '20%' }}>Start</th>
-                  <th style={{ ...tableHeaderStyle, width: '20%' }}>End</th>
-                  <th style={{ ...tableHeaderStyle, width: '15%' }}>Duration</th>
-                  <th style={{ ...tableHeaderStyle, width: '15%' }}>Earnings</th>
-                  <th style={{ ...tableHeaderStyle, width: '15%' }}>
-                    <select
-                      value={selectedCurrency.code}
-                      onChange={(e) => {
-                        const currency = CURRENCIES.find(c => c.code === e.target.value);
-                        if (currency) setSelectedCurrency(currency);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#909296',
-                        cursor: 'pointer',
-                        fontSize: '0.85rem',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.1em',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        margin: '0 auto',
-                        display: 'block',
-                        '&:hover': {
-                          background: '#1A1B1E'
-                        }
-                      }}
-                    >
-                      {CURRENCIES.map(currency => (
-                        <option key={currency.code} value={currency.code}>
-                          {currency.flag} {currency.code}
-                        </option>
-                      ))}
-                    </select>
-                  </th>
-                  <th style={{ ...tableHeaderStyle, width: '5%' }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.sessions.map((session) => (
-                  <Fragment key={session.id}>
-                    <tr style={{ transition: 'all 0.2s ease' }}>
-                      <td style={{ ...tableCellStyle, width: '80px', padding: '20px 0 20px 24px', textAlign: 'left' }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '8px' 
-                        }}>
-                          <ActionIcon 
-                            onClick={() => toggleRowExpansion(session.id)}
-                            variant="subtle"
-                            color="gray"
-                            style={{ opacity: 0.8 }}
-                          >
-                            {expandedRows.has(session.id) ? (
-                              <IconChevronDown size={16} />
-                            ) : (
-                              <IconChevronRight size={16} />
-                            )}
-                          </ActionIcon>
-                          <span style={{ 
-                            color: '#909296', 
-                            fontSize: '0.9rem',
-                            lineHeight: 1 
+            <div style={{
+              position: 'absolute',
+              bottom: -100,
+              left: -100,
+              width: 300,
+              height: 300,
+              background: 'radial-gradient(circle, rgba(0,181,169,0.15) 0%, transparent 70%)',
+              zIndex: 0
+            }} />
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <Table 
+                striped 
+                highlightOnHover
+                style={{
+                  tableLayout: 'fixed',
+                  width: '100%',
+                  '--mantine-color-dark-filled': '#0e0f11',
+                  '--mantine-color-dark-filled-hover': '#141517',
+                  '&:hover': {
+                    color: '#00b5a9'
+                  }
+                } as any}
+              >
+                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                  <tr>
+                    <th style={{ ...tableHeaderStyle, width: '80px' }}>Breaks</th>
+                    <th style={{ ...tableHeaderStyle, width: '20%' }}>Start</th>
+                    <th style={{ ...tableHeaderStyle, width: '20%' }}>End</th>
+                    <th style={{ ...tableHeaderStyle, width: '15%' }}>Duration</th>
+                    <th style={{ ...tableHeaderStyle, width: '15%' }}>Earnings</th>
+                    <th style={{ ...tableHeaderStyle, width: '15%' }}>
+                      <select
+                        value={selectedCurrency.code}
+                        onChange={(e) => {
+                          const currency = CURRENCIES.find(c => c.code === e.target.value);
+                          if (currency) setSelectedCurrency(currency);
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#909296',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.1em',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          margin: '0 auto',
+                          display: 'block'
+                        }}
+                      >
+                        {CURRENCIES.map(currency => (
+                          <option key={currency.code} value={currency.code}>
+                            {currency.flag} {currency.code}
+                          </option>
+                        ))}
+                      </select>
+                    </th>
+                    <th style={{ ...tableHeaderStyle, width: '5%' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.sessions.map((session) => (
+                    <Fragment key={session.id}>
+                      <tr style={{ transition: 'all 0.2s ease' }}>
+                        <td style={{ ...tableCellStyle, width: '80px', padding: '20px 0 20px 24px', textAlign: 'left' }}>
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px' 
                           }}>
-                            {session.pauses.length}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={tableCellStyle}>
-                        {editingSession?.id === session.id && editingSession.field === 'startTime' ? (
-                          <div style={{ width: '100%' }}>
-                            <input
-                              type="datetime-local"
-                              defaultValue={format(session.startTime, "yyyy-MM-dd'T'HH:mm")}
-                              style={{
-                                width: '100%',
-                                background: '#141517',
-                                border: '1px solid #2C2E33',
-                                borderRadius: '8px',
-                                padding: '8px 12px',
-                                color: '#C1C2C5',
-                                fontSize: '0.95rem'
-                              }}
-                              onChange={(e) => {
-                                setEditingSession(prev => prev ? {
-                                  ...prev,
-                                  tempValue: { 
-                                    ...prev.tempValue as EditValue,
-                                    start: e.target.value,
-                                    end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
-                                  }
-                                } : null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleSave('start', session);
-                                }
-                              }}
-                              autoFocus
-                            />
-                            <Group spacing={4} mt={8}>
-                              <Button 
-                                size="xs" 
-                                variant="subtle" 
-                                color="teal"
-                                onClick={() => handleSave('start', session)}
-                              >
-                                Save
-                              </Button>
-                              <Button 
-                                size="xs" 
-                                variant="subtle" 
-                                color="red"
-                                onClick={() => setEditingSession(null)}
-                              >
-                                Cancel
-                              </Button>
-                            </Group>
+                            <ActionIcon 
+                              onClick={() => toggleRowExpansion(session.id)}
+                              variant="subtle"
+                              color="gray"
+                              style={{ opacity: 0.8 }}
+                            >
+                              {expandedRows.has(session.id) ? (
+                                <IconChevronDown size={16} />
+                              ) : (
+                                <IconChevronRight size={16} />
+                              )}
+                            </ActionIcon>
+                            <span style={{ 
+                              color: '#909296', 
+                              fontSize: '0.9rem',
+                              lineHeight: 1 
+                            }}>
+                              {session.pauses.length}
+                            </span>
                           </div>
-                        ) : (
-                          <Text 
-                            onClick={() => setEditingSession({ id: session.id, field: 'startTime' })}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            {format(session.startTime, 'MMM d, h:mm a')}
-                          </Text>
-                        )}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {editingSession?.id === session.id && editingSession.field === 'endTime' ? (
-                          <Group spacing={4} direction="column" style={{ width: '100%' }}>
-                            <input
-                              type="datetime-local"
-                              defaultValue={session.endTime ? format(session.endTime, "yyyy-MM-dd'T'HH:mm") : ''}
-                              style={{
-                                width: '100%',
-                                background: '#141517',
-                                border: '1px solid #2C2E33',
-                                borderRadius: '8px',
-                                padding: '8px 12px',
-                                color: '#C1C2C5',
-                                fontSize: '0.95rem'
-                              }}
-                              onChange={(e) => {
-                                setEditingSession(prev => prev ? {
-                                  ...prev,
-                                  tempValue: { 
-                                    ...prev.tempValue as EditValue,
-                                    end: e.target.value,
-                                    start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
-                                  }
-                                } : null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleSave('end', session);
-                                }
-                              }}
-                              autoFocus
-                            />
-                            <Group spacing={4} mt={8}>
-                              <Button 
-                                size="xs" 
-                                variant="subtle" 
-                                color="teal"
-                                onClick={() => handleSave('end', session)}
-                              >
-                                Save
-                              </Button>
-                              <Button 
-                                size="xs" 
-                                variant="subtle" 
-                                color="red"
-                                onClick={() => setEditingSession(null)}
-                              >
-                                Cancel
-                              </Button>
-                            </Group>
-                          </Group>
-                        ) : (
-                          <Text 
-                            onClick={() => setEditingSession({ id: session.id, field: 'endTime' })}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            {session.endTime ? format(session.endTime, 'MMM d, h:mm a') : '-'}
-                          </Text>
-                        )}
-                      </td>
-                      <td style={tableCellStyle}>
-                        {session.endTime ? (
-                          (() => {
-                            const totalTime = differenceInSeconds(session.endTime, session.startTime);
-                            const breakTime = session.pauses.reduce((acc, pause) => {
-                              const pauseEnd = pause.endTime || session.endTime!;
-                              return acc + differenceInSeconds(pauseEnd, pause.startTime);
-                            }, 0);
-                            return formatDuration(totalTime - breakTime);
-                          })()
-                        ) : '-'}
-                      </td>
-                      <td style={tableCellStyle}>
-                        <Text span style={{ color: '#909296', fontWeight: 600 }}>
-                          ${session.earnings.toFixed(2)}
-                        </Text>
-                      </td>
-                      <td style={tableCellStyle}>
-                        <Text span style={{ color: '#909296', fontWeight: 600 }}>
-                          {selectedCurrency.symbol}{(session.earnings * exchangeRate[selectedCurrency.code]).toFixed(2)}
-                        </Text>
-                      </td>
-                      <td style={tableCellStyle}>
-                        <ActionIcon 
-                          color="red" 
-                          onClick={() => deleteSession(session.id)}
-                          variant="light"
-                          size="lg"
-                          style={{
-                            margin: '0 auto',
-                            transition: 'all 0.2s ease',
-                            '&:hover': {
-                              transform: 'scale(1.1)',
-                              background: 'rgba(255, 71, 87, 0.15)'
-                            }
-                          }}
-                        >
-                          <IconTrash size={20} />
-                        </ActionIcon>
-                      </td>
-                    </tr>
-                    
-                    {/* Expandable Pause Details */}
-                    {expandedRows.has(session.id) && (
-                      <tr>
-                        <td colSpan={7} style={{ 
-                          padding: '16px 24px',
-                          backgroundColor: '#141517'
-                        }}>
-                          <Stack spacing="md">
-                            {session.pauses.map((pause, index) => (
-                              <Group key={index} position="apart" align="center" style={{ 
-                                padding: '12px 16px',
-                                background: '#1A1B1E',
-                                borderRadius: '8px',
-                                border: '1px solid #2C2E33'
-                              }}>
-                                <div style={{ 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  gap: '12px',
-                                  width: '100%'
-                                }}>
-                                  <ActionIcon
-                                    color="red"
-                                    variant="subtle"
-                                    size="sm"
-                                    onClick={async () => {
-                                      // Delete from database
-                                      const { error } = await supabase
-                                        .from('session_pauses')
-                                        .delete()
-                                        .eq('session_id', session.id)
-                                        .eq('start_time', pause.startTime.toISOString());
-
-                                      if (!error) {
-                                        // Update local state
-                                        setState(prev => ({
-                                          ...prev,
-                                          sessions: prev.sessions.map(s => {
-                                            if (s.id !== session.id) return s;
-                                            
-                                            const updatedPauses = s.pauses.filter((_, i) => i !== index);
-                                            
-                                            // Recalculate earnings without this break
-                                            const totalTime = s.endTime ? 
-                                              (s.endTime.getTime() - s.startTime.getTime()) : 
-                                              (new Date().getTime() - s.startTime.getTime());
-                                            const breakTime = updatedPauses.reduce((acc, p) => {
-                                              const pEnd = p.endTime || new Date();
-                                              return acc + (pEnd.getTime() - p.startTime.getTime());
-                                            }, 0);
-                                            const activeTime = totalTime - breakTime;
-                                            const newEarnings = (activeTime / 3600000) * s.hourlyRate;
-
-                                            return { 
-                                              ...s, 
-                                              pauses: updatedPauses,
-                                              earnings: newEarnings
-                                            };
-                                          })
-                                        }));
-                                      }
-                                    }}
-                                  >
-                                    <IconTrash size={14} />
-                                  </ActionIcon>
-
-                                  {editingSession?.id === session.id && editingSession.field === `pause-${index}` ? (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <input
-                                        type="time"
-                                        defaultValue={format(pause.startTime, "HH:mm")}
-                                        style={{
-                                          width: '110px',
-                                          background: '#0e0f11',
-                                          border: '1px solid #2C2E33',
-                                          borderRadius: '6px',
-                                          padding: '4px 8px',
-                                          color: '#C1C2C5',
-                                          fontSize: '0.9rem'
-                                        }}
-                                        onChange={(e) => {
-                                          setEditingSession(prev => prev ? {
-                                            ...prev,
-                                            tempValue: { 
-                                              ...prev.tempValue as EditValue,
-                                              start: e.target.value,
-                                              end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
-                                            }
-                                          } : null);
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleSave('break', session, index);
-                                          }
-                                        }}
-                                      />
-                                      <Text>-</Text>
-                                      <input
-                                        type="time"
-                                        defaultValue={pause.endTime ? format(pause.endTime, "HH:mm") : ''}
-                                        style={{
-                                          width: '110px',
-                                          background: '#0e0f11',
-                                          border: '1px solid #2C2E33',
-                                          borderRadius: '6px',
-                                          padding: '4px 8px',
-                                          color: '#C1C2C5',
-                                          fontSize: '0.9rem'
-                                        }}
-                                        onChange={(e) => {
-                                          setEditingSession(prev => prev ? {
-                                            ...prev,
-                                            tempValue: { 
-                                              ...prev.tempValue as EditValue,
-                                              end: e.target.value,
-                                              start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
-                                            }
-                                          } : null);
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleSave('break', session, index);
-                                          }
-                                        }}
-                                      />
-                                      <Group spacing={4}>
-                                        <Button 
-                                          size="xs" 
-                                          variant="subtle" 
-                                          color="teal"
-                                          onClick={() => handleSave('break', session, index)}
-                                        >
-                                          Save
-                                        </Button>
-                                        <Button 
-                                          size="xs" 
-                                          variant="subtle" 
-                                          color="red"
-                                          onClick={() => setEditingSession(null)}
-                                        >
-                                          Cancel
-                                        </Button>
-                                      </Group>
-                                    </div>
-                                  ) : (
-                                    <Text 
-                                      onClick={() => setEditingSession({ id: session.id, field: `pause-${index}` })}
-                                      style={{ cursor: 'pointer', fontSize: '0.9rem' }}
-                                    >
-                                      {format(pause.startTime, 'h:mm a')} - {pause.endTime ? format(pause.endTime, 'h:mm a') : 'Ongoing'}
-                                      <Text component="span" size="xs" color="dimmed" ml={8}>
-                                        ({pause.endTime ? 
-                                          `${Math.round(differenceInSeconds(pause.endTime, pause.startTime) / 60)}min` : 
-                                          'In progress'})
-                                      </Text>
-                                    </Text>
-                                  )}
-                                </div>
-                              </Group>
-                            ))}
-
-                            {editingSession?.id === session.id && editingSession.field === 'pause-new' ? (
-                              <Group 
-                                spacing={8}
-                                style={{ 
+                        </td>
+                        <td style={tableCellStyle}>
+                          {editingSession?.id === session.id && editingSession.field === 'startTime' ? (
+                            <Stack spacing={4} style={{ width: '100%' }}>
+                              <input
+                                type="datetime-local"
+                                defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.start : editingSession.tempValue}
+                                style={{
                                   width: '100%',
-                                  display: 'flex',
-                                  flexDirection: 'column' as const
+                                  background: '#141517',
+                                  border: '1px solid #2C2E33',
+                                  borderRadius: '8px',
+                                  padding: '8px 12px',
+                                  color: '#C1C2C5',
+                                  fontSize: '0.95rem'
                                 }}
-                              >
-                                <input
-                                  type="time"
-                                  defaultValue={editingSession.tempValue?.start}
-                                  style={{
-                                    width: '110px',
-                                    background: '#0e0f11',
-                                    border: '1px solid #2C2E33',
-                                    borderRadius: '6px',
-                                    padding: '4px 8px',
-                                    color: '#C1C2C5',
-                                    fontSize: '0.9rem'
-                                  }}
-                                  onChange={(e) => {
-                                    setEditingSession(prev => prev ? {
+                                onChange={(e) => {
+                                  setEditingSession(prev => {
+                                    if (!prev) return null;
+                                    const tempValue = typeof prev.tempValue === 'string' ? 
+                                      { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
+                                      prev.tempValue;
+                                    return {
                                       ...prev,
-                                      tempValue: { 
-                                        ...prev.tempValue as any,
+                                      tempValue: {
+                                        ...tempValue,
                                         start: e.target.value,
-                                        end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
+                                        end: tempValue.end || format(new Date(), "HH:mm")
                                       }
-                                    } : null);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      handleSave('break', session, session.pauses.length);
-                                    }
-                                  }}
-                                />
-                                <Text>-</Text>
-                                <input
-                                  type="time"
-                                  defaultValue={editingSession.tempValue?.end}
-                                  style={{
-                                    width: '110px',
-                                    background: '#0e0f11',
-                                    border: '1px solid #2C2E33',
-                                    borderRadius: '6px',
-                                    padding: '4px 8px',
-                                    color: '#C1C2C5',
-                                    fontSize: '0.9rem'
-                                  }}
-                                  onChange={(e) => {
-                                    setEditingSession(prev => prev ? {
-                                      ...prev,
-                                      tempValue: { 
-                                        ...prev.tempValue as any,
-                                        end: e.target.value,
-                                        start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
-                                      }
-                                    } : null);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      handleSave('break', session, session.pauses.length);
-                                    }
-                                  }}
-                                />
-                                <Group spacing={4}>
-                                  <Button 
-                                    size="xs" 
-                                    variant="subtle" 
-                                    color="teal"
-                                    onClick={() => handleSave('break', session, session.pauses.length)}
-                                  >
-                                    Save
-                                  </Button>
-                                  <Button 
-                                    size="xs" 
-                                    variant="subtle" 
-                                    color="red"
-                                    onClick={() => setEditingSession(null)}
-                                  >
-                                    Cancel
-                                  </Button>
-                                </Group>
-                              </Group>
-                            ) : (
-                              <Group position="apart" mt={8}>
-                                <Button
-                                  size="xs"
-                                  variant="subtle"
-                                  color="gray"
-                                  onClick={() => addBreak(session.id)}
-                                  leftSection={<IconPlus size={14} />}
-                                  style={{ fontWeight: 500 }}
+                                    };
+                                  });
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    state.currentSession && handleSave('start', state.currentSession);
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <Group spacing={4}>
+                                <Button 
+                                  size="xs" 
+                                  variant="subtle" 
+                                  color="teal"
+                                  onClick={() => state.currentSession && handleSave('start', state.currentSession)}
                                 >
-                                  Add Break
+                                  Save
                                 </Button>
-                                {session.pauses.length > 0 && (
-                                  <Text size="sm" color="dimmed" weight={500}>
-                                    Total Break Time: {Math.round(session.pauses.reduce((acc, pause) => {
-                                      const end = pause.endTime || new Date();
-                                      return acc + differenceInSeconds(end, pause.startTime);
-                                    }, 0) / 60)}min
-                                  </Text>
-                                )}
+                                <Button 
+                                  size="xs" 
+                                  variant="subtle" 
+                                  color="red"
+                                  onClick={() => setEditingSession(null)}
+                                >
+                                  Cancel
+                                </Button>
                               </Group>
-                            )}
-                          </Stack>
+                            </Stack>
+                          ) : (
+                            <Text 
+                              onClick={() => setEditingSession({ 
+                                id: session.id, 
+                                field: 'startTime',
+                                tempValue: format(session.startTime, "HH:mm")
+                              })}
+                              sx={(theme) => ({
+                                cursor: 'pointer',
+                                '&:hover': {
+                                  color: theme.colors.teal[4],
+                                  textDecoration: 'underline'
+                                }
+                              })}
+                            >
+                              {format(session.startTime, 'MMM d, h:mm a')}
+                            </Text>
+                          )}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {editingSession?.id === session.id && editingSession.field === 'endTime' ? (
+                            <Stack spacing={4} style={{ width: '100%' }}>
+                              <input
+                                type="datetime-local"
+                                defaultValue={session.endTime ? format(session.endTime, "yyyy-MM-dd'T'HH:mm") : ''}
+                                style={{
+                                  width: '100%',
+                                  background: '#141517',
+                                  border: '1px solid #2C2E33',
+                                  borderRadius: '8px',
+                                  padding: '8px 12px',
+                                  color: '#C1C2C5',
+                                  fontSize: '0.95rem'
+                                }}
+                                onChange={(e) => {
+                                  setEditingSession(prev => {
+                                    if (!prev) return null;
+                                    const tempValue = typeof prev.tempValue === 'string' ? 
+                                      { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
+                                      prev.tempValue;
+                                    return {
+                                      ...prev,
+                                      tempValue: {
+                                        ...tempValue,
+                                        end: e.target.value,
+                                        start: tempValue.start || format(new Date(), "HH:mm")
+                                      }
+                                    };
+                                  });
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    state.currentSession && handleSave('end', state.currentSession);
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <Group spacing={4}>
+                                <Button 
+                                  size="xs" 
+                                  variant="subtle" 
+                                  color="teal"
+                                  onClick={() => state.currentSession && handleSave('end', state.currentSession)}
+                                >
+                                  Save
+                                </Button>
+                                <Button 
+                                  size="xs" 
+                                  variant="subtle" 
+                                  color="red"
+                                  onClick={() => setEditingSession(null)}
+                                >
+                                  Cancel
+                                </Button>
+                              </Group>
+                            </Stack>
+                          ) : (
+                            <Text 
+                              onClick={() => setEditingSession({ 
+                                id: session.id, 
+                                field: 'endTime',
+                                tempValue: format(session.endTime || new Date(), "HH:mm")
+                              })}
+                              sx={(theme) => ({
+                                cursor: 'pointer',
+                                '&:hover': {
+                                  color: theme.colors.teal[4],
+                                  textDecoration: 'underline'
+                                }
+                              })}
+                            >
+                              {session.endTime ? format(session.endTime, 'MMM d, h:mm a') : '-'}
+                            </Text>
+                          )}
+                        </td>
+                        <td style={tableCellStyle}>
+                          {session.endTime ? (
+                            (() => {
+                              const totalTime = differenceInSeconds(session.endTime, session.startTime);
+                              const breakTime = session.pauses.reduce((acc, pause) => {
+                                const pauseEnd = pause.endTime || session.endTime!;
+                                return acc + differenceInSeconds(pauseEnd, pause.startTime);
+                              }, 0);
+                              return formatDuration(totalTime - breakTime);
+                            })()
+                          ) : '-'}
+                        </td>
+                        <td style={tableCellStyle}>
+                          <Text span style={{ color: '#909296', fontWeight: 600 }}>
+                            ${session.earnings.toFixed(2)}
+                          </Text>
+                        </td>
+                        <td style={tableCellStyle}>
+                          <Text span style={{ color: '#909296', fontWeight: 600 }}>
+                            {selectedCurrency.symbol}{(session.earnings * exchangeRate[selectedCurrency.code]).toFixed(2)}
+                          </Text>
+                        </td>
+                        <td style={tableCellStyle}>
+                          <ActionIcon 
+                            color="red" 
+                            onClick={() => deleteSession(session.id)}
+                            variant="light"
+                            size="lg"
+                            style={{
+                              margin: '0 auto',
+                              transition: 'all 0.2s ease',
+                              transform: editingSession ? 'scale(1.1)' : 'none',
+                              background: editingSession ? 'rgba(255, 71, 87, 0.15)' : 'transparent'
+                            }}
+                          >
+                            <IconTrash size={20} />
+                          </ActionIcon>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </Table>
+                      
+                      {/* Expandable Pause Details */}
+                      {expandedRows.has(session.id) && (
+                        <tr>
+                          <td colSpan={7} style={{ 
+                            padding: '16px 24px',
+                            backgroundColor: '#141517'
+                          }}>
+                            <Stack spacing="md">
+                              {session.pauses.map((pause, index) => (
+                                <Group key={index} position="apart" align="center" style={{ 
+                                  padding: '12px 16px',
+                                  background: '#1A1B1E',
+                                  borderRadius: '8px',
+                                  border: '1px solid #2C2E33'
+                                }}>
+                                  <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '12px',
+                                    width: '100%'
+                                  }}>
+                                    <ActionIcon
+                                      color="red"
+                                      variant="subtle"
+                                      size="sm"
+                                      onClick={async () => {
+                                        // Delete from database
+                                        const { error } = await supabase
+                                          .from('session_pauses')
+                                          .delete()
+                                          .eq('session_id', session.id)
+                                          .eq('start_time', pause.startTime.toISOString());
+
+                                        if (!error) {
+                                          // Update local state
+                                          setState(prev => ({
+                                            ...prev,
+                                            sessions: prev.sessions.map(s => {
+                                              if (s.id !== session.id) return s;
+                                              
+                                              const updatedPauses = s.pauses.filter((_, i) => i !== index);
+                                              
+                                              // Recalculate earnings without this break
+                                              const totalTime = s.endTime ? 
+                                                (s.endTime.getTime() - s.startTime.getTime()) : 
+                                                (new Date().getTime() - s.startTime.getTime());
+                                              const breakTime = updatedPauses.reduce((acc, p) => {
+                                                const pEnd = p.endTime || new Date();
+                                                return acc + (pEnd.getTime() - p.startTime.getTime());
+                                              }, 0);
+                                              const activeTime = totalTime - breakTime;
+                                              const newEarnings = (activeTime / 3600000) * s.hourlyRate;
+
+                                              return { 
+                                                ...s, 
+                                                pauses: updatedPauses,
+                                                earnings: newEarnings
+                                              };
+                                            })
+                                          }));
+                                        }
+                                      }}
+                                    >
+                                      <IconTrash size={14} />
+                                    </ActionIcon>
+
+                                    {editingSession?.id === session.id && editingSession.field === `pause-${index}` ? (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input
+                                          type="time"
+                                          defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.start : editingSession.tempValue}
+                                          style={{
+                                            width: '110px',
+                                            background: '#0e0f11',
+                                            border: '1px solid #2C2E33',
+                                            borderRadius: '6px',
+                                            padding: '4px 8px',
+                                            color: '#C1C2C5',
+                                            fontSize: '0.9rem'
+                                          }}
+                                          onChange={(e) => {
+                                            setEditingSession(prev => {
+                                              if (!prev) return null;
+                                              const tempValue = typeof prev.tempValue === 'string' ? 
+                                                { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
+                                                prev.tempValue;
+                                              return {
+                                                ...prev,
+                                                tempValue: {
+                                                  ...tempValue,
+                                                  start: e.target.value,
+                                                  end: tempValue.end || format(new Date(), "HH:mm")
+                                                }
+                                              };
+                                            });
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              state.currentSession && handleSave('break', state.currentSession, index);
+                                            }
+                                          }}
+                                        />
+                                        <Text>-</Text>
+                                        <input
+                                          type="time"
+                                          defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.end : editingSession.tempValue}
+                                          style={{
+                                            width: '110px',
+                                            background: '#0e0f11',
+                                            border: '1px solid #2C2E33',
+                                            borderRadius: '6px',
+                                            padding: '4px 8px',
+                                            color: '#C1C2C5',
+                                            fontSize: '0.9rem'
+                                          }}
+                                          onChange={(e) => {
+                                            setEditingSession(prev => {
+                                              if (!prev) return null;
+                                              const tempValue = typeof prev.tempValue === 'string' ? 
+                                                { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
+                                                prev.tempValue;
+                                              return {
+                                                ...prev,
+                                                tempValue: {
+                                                  ...tempValue,
+                                                  end: e.target.value,
+                                                  start: tempValue.start || format(new Date(), "HH:mm")
+                                                }
+                                              };
+                                            });
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              state.currentSession && handleSave('break', state.currentSession, index);
+                                            }
+                                          }}
+                                        />
+                                        <Group spacing={4}>
+                                          <Button 
+                                            size="xs" 
+                                            variant="subtle" 
+                                            color="teal"
+                                            onClick={() => state.currentSession && handleSave('break', state.currentSession, index)}
+                                          >
+                                            Save
+                                          </Button>
+                                          <Button 
+                                            size="xs" 
+                                            variant="subtle" 
+                                            color="red"
+                                            onClick={() => setEditingSession(null)}
+                                          >
+                                            Cancel
+                                          </Button>
+                                        </Group>
+                                      </div>
+                                    ) : (
+                                      <Text 
+                                        onClick={() => setEditingSession({ 
+                                          id: session.id, 
+                                          field: `pause-${index}`,
+                                          tempValue: format(pause.startTime, "HH:mm")
+                                        })}
+                                        sx={(theme) => ({
+                                          cursor: 'pointer',
+                                          '&:hover': {
+                                            color: theme.colors.teal[4],
+                                            textDecoration: 'underline'
+                                          }
+                                        })}
+                                      >
+                                        {format(pause.startTime, 'h:mm a')} - {pause.endTime ? format(pause.endTime, 'h:mm a') : 'Ongoing'}
+                                        <Text component="span" size="xs" color="dimmed" ml={8}>
+                                          ({pause.endTime ? 
+                                            `${Math.round(differenceInSeconds(pause.endTime, pause.startTime) / 60)}min` : 
+                                            'In progress'})
+                                        </Text>
+                                      </Text>
+                                    )}
+                                  </div>
+                                </Group>
+                              ))}
+
+                              {editingSession?.id === session.id && editingSession.field === 'pause-new' ? (
+                                <Group 
+                                  spacing={8}
+                                  style={{ 
+                                    width: '100%',
+                                    display: 'flex',
+                                    flexDirection: 'column' as const
+                                  }}
+                                >
+                                  <input
+                                    type="time"
+                                    defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.start : editingSession.tempValue}
+                                    style={{
+                                      width: '110px',
+                                      background: '#0e0f11',
+                                      border: '1px solid #2C2E33',
+                                      borderRadius: '6px',
+                                      padding: '4px 8px',
+                                      color: '#C1C2C5',
+                                      fontSize: '0.9rem'
+                                    }}
+                                    onChange={(e) => {
+                                      setEditingSession(prev => {
+                                        if (!prev) return null;
+                                        const tempValue = typeof prev.tempValue === 'string' ? 
+                                          { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
+                                          prev.tempValue;
+                                        return {
+                                          ...prev,
+                                          tempValue: {
+                                            ...tempValue,
+                                            start: e.target.value,
+                                            end: tempValue.end || format(new Date(), "HH:mm")
+                                          }
+                                        };
+                                      });
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        state.currentSession && handleSave('break', state.currentSession, session.pauses.length);
+                                      }
+                                    }}
+                                  />
+                                  <Text>-</Text>
+                                  <input
+                                    type="time"
+                                    defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.end : editingSession.tempValue}
+                                    style={{
+                                      width: '110px',
+                                      background: '#0e0f11',
+                                      border: '1px solid #2C2E33',
+                                      borderRadius: '6px',
+                                      padding: '4px 8px',
+                                      color: '#C1C2C5',
+                                      fontSize: '0.9rem'
+                                    }}
+                                    onChange={(e) => {
+                                      setEditingSession(prev => {
+                                        if (!prev) return null;
+                                        const tempValue = typeof prev.tempValue === 'string' ? 
+                                          { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
+                                          prev.tempValue;
+                                        return {
+                                          ...prev,
+                                          tempValue: {
+                                            ...tempValue,
+                                            end: e.target.value,
+                                            start: tempValue.start || format(new Date(), "HH:mm")
+                                          }
+                                        };
+                                      });
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        state.currentSession && handleSave('break', state.currentSession, session.pauses.length);
+                                      }
+                                    }}
+                                  />
+                                  <Group spacing={4}>
+                                    <Button 
+                                      size="xs" 
+                                      variant="subtle" 
+                                      color="teal"
+                                      onClick={() => state.currentSession && handleSave('break', state.currentSession, session.pauses.length)}
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button 
+                                      size="xs" 
+                                      variant="subtle" 
+                                      color="red"
+                                      onClick={() => setEditingSession(null)}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </Group>
+                                </Group>
+                              ) : (
+                                <Group position="apart" mt={8}>
+                                  <Button
+                                    size="xs"
+                                    variant="subtle"
+                                    color="gray"
+                                    onClick={() => addBreak(session.id)}
+                                    leftIcon={<IconPlus size={14} />}
+                                    style={{ fontWeight: 500 }}
+                                  >
+                                    Add Break
+                                  </Button>
+                                  {session.pauses.length > 0 && (
+                                    <Text size="sm" color="dimmed" weight={500}>
+                                      Total Break Time: {Math.round(session.pauses.reduce((acc, pause) => {
+                                        const end = pause.endTime || new Date();
+                                        return acc + differenceInSeconds(end, pause.startTime);
+                                      }, 0) / 60)}min
+                                    </Text>
+                                  )}
+                                </Group>
+                              )}
+                            </Stack>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
           </Paper>
         )}
 
@@ -1279,108 +1351,110 @@ export function Timer() {
                 boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5)',
                 border: '1px solid #2C2E33',
                 position: 'relative',
-                overflow: 'hidden',
-                '&::before': {
-                  content: '""',
-                  position: 'absolute',
-                  bottom: -100,
-                  left: -100,
-                  width: 300,
-                  height: 300,
-                  background: 'radial-gradient(circle, rgba(0,181,169,0.15) 0%, transparent 70%)'
-                }
+                overflow: 'hidden'
               }}
               onClick={e => e.stopPropagation()}
             >
-              <Stack spacing={32} align="center">
-                <Text 
-                  size="xl" 
-                  weight={700}
-                  color="dimmed"
-                  style={{ 
-                    letterSpacing: '0.1em', 
-                    textTransform: 'uppercase',
-                    fontFeatureSettings: '"calt" off, "liga" off'
-                  }}
-                >
-                  Session Summary
-                </Text>
-                <Text 
-                  size="3.5rem" 
-                  weight={800} 
-                  style={{ 
-                    background: 'linear-gradient(135deg, #00e6d4 0%, #00b5a9 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    lineHeight: 1,
-                    textShadow: '0 0 25px rgba(0, 230, 212, 0.15)'
-                  }}
-                >
-                  ${completedSession?.earnings.toFixed(2)}
-                </Text>
-                <Paper 
-                  withBorder 
-                  p={32}
-                  radius="lg" 
-                  style={{ 
-                    width: '100%',
-                    backgroundColor: '#141517',
-                    border: '1px solid #2C2E33'
-                  }}
-                >
-                  <Stack spacing={24}>
-                    <Group position="apart">
-                      <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Duration</Text>
-                      <Text size="md" weight={600}>
-                        {completedSession?.endTime && (() => {
-                          const totalTime = differenceInSeconds(completedSession.endTime, completedSession.startTime);
-                          const breakTime = completedSession.pauses.reduce((acc, pause) => {
-                            const pauseEnd = pause.endTime || completedSession.endTime!;
-                            return acc + differenceInSeconds(pauseEnd, pause.startTime);
-                          }, 0);
-                          return formatDuration(totalTime - breakTime);
-                        })()}
-                      </Text>
-                    </Group>
-                    
-                    <Group position="apart">
-                      <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Start Time</Text>
-                      <Text size="md" weight={600}>
-                        {completedSession && format(completedSession.startTime, 'h:mm a')}
-                      </Text>
-                    </Group>
-                    
-                    <Group position="apart">
-                      <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>End Time</Text>
-                      <Text size="md" weight={600}>
-                        {completedSession?.endTime && format(completedSession.endTime, 'h:mm a')}
-                      </Text>
-                    </Group>
-                    
-                    <Group position="apart">
-                      <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Rate</Text>
-                      <Text size="md" weight={600}>
-                        ${completedSession?.hourlyRate}/hr
-                      </Text>
-                    </Group>
-                  </Stack>
-                </Paper>
+              <div style={{
+                position: 'absolute',
+                bottom: -100,
+                left: -100,
+                width: 300,
+                height: 300,
+                background: 'radial-gradient(circle, rgba(0,181,169,0.15) 0%, transparent 70%)',
+                zIndex: 0
+              }} />
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                <Stack spacing={32} align="center">
+                  <Text 
+                    size="xl" 
+                    weight={700}
+                    color="dimmed"
+                    style={{ 
+                      letterSpacing: '0.1em', 
+                      textTransform: 'uppercase',
+                      fontFeatureSettings: '"calt" off, "liga" off'
+                    }}
+                  >
+                    Session Summary
+                  </Text>
+                  <Text 
+                    size="3.5rem" 
+                    weight={800} 
+                    style={{ 
+                      background: 'linear-gradient(135deg, #00e6d4 0%, #00b5a9 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      lineHeight: 1,
+                      textShadow: '0 0 25px rgba(0, 230, 212, 0.15)'
+                    }}
+                  >
+                    ${completedSession?.earnings.toFixed(2)}
+                  </Text>
+                  <Paper 
+                    withBorder 
+                    p={32}
+                    radius="lg" 
+                    style={{ 
+                      width: '100%',
+                      backgroundColor: '#141517',
+                      border: '1px solid #2C2E33'
+                    }}
+                  >
+                    <Stack spacing={24}>
+                      <Group position="apart">
+                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Duration</Text>
+                        <Text size="md" weight={600}>
+                          {completedSession?.endTime && (() => {
+                            const totalTime = differenceInSeconds(completedSession.endTime, completedSession.startTime);
+                            const breakTime = completedSession.pauses.reduce((acc, pause) => {
+                              const pauseEnd = pause.endTime || completedSession.endTime!;
+                              return acc + differenceInSeconds(pauseEnd, pause.startTime);
+                            }, 0);
+                            return formatDuration(totalTime - breakTime);
+                          })()}
+                        </Text>
+                      </Group>
+                      
+                      <Group position="apart">
+                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Start Time</Text>
+                        <Text size="md" weight={600}>
+                          {completedSession && format(completedSession.startTime, 'h:mm a')}
+                        </Text>
+                      </Group>
+                      
+                      <Group position="apart">
+                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>End Time</Text>
+                        <Text size="md" weight={600}>
+                          {completedSession?.endTime && format(completedSession.endTime, 'h:mm a')}
+                        </Text>
+                      </Group>
+                      
+                      <Group position="apart">
+                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Rate</Text>
+                        <Text size="md" weight={600}>
+                          ${completedSession?.hourlyRate}/hr
+                        </Text>
+                      </Group>
+                    </Stack>
+                  </Paper>
 
-                <Button 
-                  fullWidth 
-                  onClick={() => setSummaryModalOpen(false)} 
-                  color="teal"
-                  size="xl"
-                  radius="xl"
-                  sx={{
-                    height: '56px',
-                    fontSize: '1.1rem',
-                    fontWeight: 600
-                  }}
-                >
-                  Close
-                </Button>
-              </Stack>
+                  <Button 
+                    fullWidth 
+                    onClick={() => setSummaryModalOpen(false)} 
+                    color="teal"
+                    size="xl"
+                    radius="xl"
+                    sx={{
+                      height: '56px',
+                      fontSize: '1.1rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    Close
+                  </Button>
+                </Stack>
+              </div>
             </Paper>
           </div>
         )}
