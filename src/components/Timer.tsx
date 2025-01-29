@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
 import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container, ActionIcon } from '@mantine/core';
-import { TimeInput } from '@mantine/dates';
 import { format, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
 import { TimerState, TimerSession } from '../types';
@@ -440,8 +439,6 @@ export function Timer() {
     fetchSessions();
   }, []);
 
-  const currentSession = state.currentSession!;
-
   return (
     <Container size="lg" px={{ base: 20, sm: 40 }} py={60}>
       <Group position="apart" mb={40}>
@@ -734,7 +731,7 @@ export function Timer() {
                 '&:hover': {
                   color: '#00b5a9'
                 }
-              }}
+              } as any}
             >
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr>
