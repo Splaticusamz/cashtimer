@@ -3,7 +3,7 @@ import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container, Actio
 import { TimeInput } from '@mantine/dates';
 import { format, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
-import { TimerState } from '../types';
+import { TimerState, TimerSession } from '../types';
 import { IconTrash, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
 import { supabase } from '../lib/supabase';
 
@@ -52,6 +52,11 @@ const formatDuration = (seconds: number): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
+interface Pause {
+  startTime: Date;
+  endTime: Date | null;
+}
+
 export function Timer() {
   const [state, setState] = useState<TimerState>({
     isRunning: false,
@@ -78,7 +83,7 @@ export function Timer() {
     const endTime = session.endTime || now;
     
     // Calculate total break time in milliseconds
-    const totalBreakTime = session.pauses.reduce((acc, pause) => {
+    const totalBreakTime = session.pauses.reduce((acc: number, pause: Pause) => {
       const pauseEnd = pause.endTime || now;
       return acc + (pauseEnd.getTime() - pause.startTime.getTime());
     }, 0);
@@ -353,11 +358,6 @@ export function Timer() {
     }));
   };
 
-  const calculateSessionEarnings = (startTime: Date, endTime: Date, hourlyRate: number): number => {
-    const durationInHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
-    return durationInHours * hourlyRate;
-  };
-
   const toggleRowExpansion = (sessionId: string) => {
     setExpandedRows(prev => {
       const next = new Set(prev);
@@ -450,10 +450,6 @@ export function Timer() {
   useEffect(() => {
     fetchSessions();
   }, []);
-
-  const currentSession = state.currentSession!; // Add non-null assertion
-  // OR
-  if (!state.currentSession) return null;
 
   return (
     <Container size="lg" px={{ base: 20, sm: 40 }} py={60}>
@@ -583,7 +579,7 @@ export function Timer() {
                       '&:hover': { 
                         color: '#00b5a9',
                         textDecoration: 'underline' 
-                      } as React.CSSProperties
+                      } as any
                     }}
                   >
                     {format(state.currentSession.startTime, 'h:mm a')}
@@ -680,7 +676,7 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    left={<IconPlayerStop size={20} />}
+                    leftIcon={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',
@@ -714,7 +710,7 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    left={<IconPlayerStop size={20} />}
+                    leftIcon={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',
