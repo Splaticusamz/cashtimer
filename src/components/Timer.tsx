@@ -27,7 +27,7 @@ const CURRENCIES: Currency[] = [
 
 type ExchangeRate = {
   [key: string]: number;
-  lastUpdated: Date;
+  lastUpdated: number;  // Change from Date to number, store timestamp instead
 };
 
 type EditingSession = {
@@ -70,8 +70,8 @@ export function Timer() {
   const [completedSession, setCompletedSession] = useState<TimerSession | null>(null);
   const [editingSession, setEditingSession] = useState<EditingSession | null>(null);
   const [exchangeRate, setExchangeRate] = useState<ExchangeRate>({
-    USDCAD: 1.35, // Default fallback rate
-    lastUpdated: new Date()
+    USDCAD: 1.35,
+    lastUpdated: Date.now() // Use timestamp instead of Date object
   });
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(CURRENCIES[1]); // Default to CAD
@@ -181,7 +181,7 @@ export function Timer() {
         const data = await response.json();
         setExchangeRate({
           ...data.rates,
-          lastUpdated: new Date()
+          lastUpdated: Date.now()
         });
       } catch (error) {
         console.error('Failed to fetch exchange rate:', error);
