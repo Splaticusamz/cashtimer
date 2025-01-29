@@ -661,7 +661,7 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    leftIcon={<IconPlayerStop size={20} />}
+                    rightIcon={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',
@@ -695,7 +695,7 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    leftIcon={<IconPlayerStop size={20} />}
+                    rightIcon={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',

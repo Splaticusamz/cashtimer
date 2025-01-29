@@ -1,10 +1,6 @@
 import { Button, ButtonProps } from '@mantine/core';
-import { ReactNode } from 'react';
+import { forwardRef } from 'react';
 
-interface CustomButtonProps extends ButtonProps {
-  leftIcon?: ReactNode;
-}
-
-export const CustomButton = ({ leftIcon, ...props }: CustomButtonProps) => (
-  <Button {...props} leftIcon={leftIcon} />
-); 
+export const CustomButton = forwardRef<HTMLButtonElement, ButtonProps>((props, ref) => (
+  <Button ref={ref} {...props} />
+)); 
