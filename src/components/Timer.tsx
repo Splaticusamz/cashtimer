@@ -729,8 +729,11 @@ export function Timer() {
               style={{
                 tableLayout: 'fixed',
                 width: '100%',
-                '--mantine-color-dark-filled': '#0e0f11' as any,
-                '--mantine-color-dark-filled-hover': '#141517' as any
+                '--mantine-color-dark-filled': '#0e0f11',
+                '--mantine-color-dark-filled-hover': '#141517',
+                '&:hover': {
+                  color: '#00b5a9'
+                }
               }}
             >
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
