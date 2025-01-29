@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container, ActionIcon } from '@mantine/core';
 import { format, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
 import { TimerState, TimerSession } from '../types';
 import { CustomButton } from './CustomButton';
-import { PauseInterval, EditValue, EditingSession } from '../types/timer';
+import { EditValue, EditingSession } from '../types/timer';
 import { supabase } from '../lib/supabase';
-import { IconTrash, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
+import { IconTrash, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
 
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
