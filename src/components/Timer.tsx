@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
 import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container, ActionIcon } from '@mantine/core';
-import { TimeInput, DateTimePicker } from '@mantine/dates';
-import { format, parse, differenceInMinutes, differenceInSeconds } from 'date-fns';
+import { TimeInput } from '@mantine/dates';
+import { format, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
-import { TimerState, TimerSession, SessionPause } from '../types';
-import { IconTrash, IconEdit, IconClock, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
+import { TimerState } from '../types';
+import { IconTrash, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
 import { supabase } from '../lib/supabase';
-
 
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
@@ -35,8 +34,6 @@ type EditingSession = {
   field: 'startTime' | 'endTime' | `pause-${number}` | 'pause-new';
   tempValue?: string | { start?: string; end?: string };
 };
-
-type SaveFunction = () => Promise<void>;
 
 type EditValue = {
   start?: string;
@@ -391,48 +388,6 @@ export function Timer() {
     });
   };
 
-  // Extract the save function
-  const saveBreak = async (session: TimerSession, tempValue: { start?: string; end?: string }) => {
-    if (!tempValue?.start || !tempValue?.end) {
-      setEditingSession(null);
-      return;
-    }
-
-    const startDate = new Date(session.startTime);
-    const [startHours, startMinutes] = tempValue.start.split(':').map(Number);
-    startDate.setHours(startHours, startMinutes);
-
-    const endDate = new Date(session.startTime);
-    const [endHours, endMinutes] = tempValue.end.split(':').map(Number);
-    endDate.setHours(endHours, endMinutes);
-
-    const { data, error } = await supabase
-      .from('session_pauses')
-      .insert([{
-        session_id: session.id,
-        start_time: startDate.toISOString(),
-        end_time: endDate.toISOString()
-      }])
-      .select()
-      .single();
-
-    if (!error) {
-      setState(prev => ({
-        ...prev,
-        sessions: prev.sessions.map(s => {
-          if (s.id !== session.id) return s;
-          const newPause = {
-            startTime: startDate,
-            endTime: endDate
-          };
-          const updatedPauses = [...s.pauses, newPause];
-          return { ...s, pauses: updatedPauses };
-        })
-      }));
-    }
-    setEditingSession(null);
-  };
-
   // Replace handleSave with this simpler version
   const handleSave = async (type: 'start' | 'end' | 'break', session: TimerSession, index?: number) => {
     if (!editingSession?.tempValue) return;
@@ -490,144 +445,6 @@ export function Timer() {
     } finally {
       setEditingSession(null);
     }
-  };
-
-  // Update the handleKeyPress function
-  const handleKeyPress = (e: React.KeyboardEvent, onSave: () => void) => {
-    if (e.key === 'Enter') {
-      e.preventDefault(); // Add this to prevent form submission
-      onSave();
-    }
-  };
-
-  // Add this function before the return statement
-  const handleStartTimeEdit = async (sessionId: string, newTimeStr: string) => {
-    const session = state.sessions.find(s => s.id === sessionId);
-    if (!session) return;
-    const newDate = new Date(newTimeStr);
-    if (!isNaN(newDate.getTime())) {
-      const { error } = await supabase
-        .from('timer_sessions')
-        .update({ 
-          start_time: newDate.toISOString(),
-          earnings: calculateSessionEarnings(newDate, session.endTime || new Date(), session.hourlyRate)
-        })
-        .eq('id', sessionId);
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== sessionId) return s;
-            const newEarnings = calculateSessionEarnings(newDate, s.endTime || new Date(), s.hourlyRate);
-            return { ...s, startTime: newDate, earnings: newEarnings };
-          })
-        }));
-      }
-    }
-    setEditingSession(null);
-  };
-
-  // Add this function alongside other handlers
-  const handleEndTimeEdit = async (sessionId: string, newTimeStr: string) => {
-    const session = state.sessions.find(s => s.id === sessionId);
-    if (!session) return;
-    const newDate = new Date(newTimeStr);
-    if (!isNaN(newDate.getTime())) {
-      const { error } = await supabase
-        .from('timer_sessions')
-        .update({ 
-          end_time: newDate.toISOString(),
-          earnings: calculateSessionEarnings(session.startTime, newDate, session.hourlyRate)
-        })
-        .eq('id', sessionId);
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== sessionId) return s;
-            const newEarnings = calculateSessionEarnings(s.startTime, newDate, s.hourlyRate);
-            return { ...s, endTime: newDate, earnings: newEarnings };
-          })
-        }));
-      }
-    }
-    setEditingSession(null);
-  };
-
-  // Update the break edit handler
-  const handleBreakEdit = async (
-    session: TimerSession, 
-    index: number, 
-    tempValue: { start?: string; end?: string }
-  ) => {
-    if (!tempValue?.start || !tempValue?.end) {
-      setEditingSession(null);
-      return;
-    }
-
-    const startDate = new Date(session.startTime);
-    const [startHours, startMinutes] = tempValue.start.split(':').map(Number);
-    startDate.setHours(startHours, startMinutes);
-
-    const endDate = new Date(session.startTime);
-    const [endHours, endMinutes] = tempValue.end.split(':').map(Number);
-    endDate.setHours(endHours, endMinutes);
-
-    // For existing breaks
-    if (typeof index === 'number' && index < session.pauses.length) {
-      const { error } = await supabase
-        .from('session_pauses')
-        .update({
-          start_time: startDate.toISOString(),
-          end_time: endDate.toISOString()
-        })
-        .eq('session_id', session.id)
-        .eq('start_time', session.pauses[index].startTime.toISOString());
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== session.id) return s;
-            const updatedPauses = [...s.pauses];
-            updatedPauses[index] = {
-              startTime: startDate,
-              endTime: endDate
-            };
-            return { ...s, pauses: updatedPauses };
-          })
-        }));
-      }
-    } else {
-      // For new breaks
-      const { error } = await supabase
-        .from('session_pauses')
-        .insert([{
-          session_id: session.id,
-          start_time: startDate.toISOString(),
-          end_time: endDate.toISOString()
-        }])
-        .select()
-        .single();
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== session.id) return s;
-            const newPause = {
-              startTime: startDate,
-              endTime: endDate
-            };
-            const updatedPauses = [...s.pauses, newPause];
-            return { ...s, pauses: updatedPauses };
-          })
-        }));
-      }
-    }
-    setEditingSession(null);
   };
 
   useEffect(() => {
@@ -863,7 +680,7 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    leftSection={<IconPlayerStop size={20} />}
+                    left={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',
@@ -897,7 +714,7 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    leftSection={<IconPlayerStop size={20} />}
+                    left={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',
