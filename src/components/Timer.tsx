@@ -6,6 +6,8 @@ import confetti from 'canvas-confetti';
 import { TimerState, TimerSession } from '../types';
 import { IconTrash, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
 import { supabase } from '../lib/supabase';
+import { CustomButton } from './CustomButton';
+import { PauseInterval, EditValue, EditingSession } from '../types/timer';
 
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
@@ -29,18 +31,6 @@ type ExchangeRate = {
   lastUpdated: number;  // Change from Date to number, store timestamp instead
 };
 
-type EditingSession = {
-  id: string;
-  field: 'startTime' | 'endTime' | `pause-${number}` | 'pause-new';
-  tempValue?: string | { start?: string; end?: string };
-};
-
-type EditValue = {
-  start?: string;
-  end?: string;
-  datetime?: string;
-};
-
 const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -51,11 +41,6 @@ const formatDuration = (seconds: number): string => {
   }
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
-
-interface PauseInterval {
-  startTime: Date;
-  endTime: Date | undefined;
-}
 
 export function Timer() {
   const [state, setState] = useState<TimerState>({
@@ -83,7 +68,7 @@ export function Timer() {
     const endTime = session.endTime || now;
     
     // Calculate total break time in milliseconds
-    const totalBreakTime = session.pauses.reduce<number>((acc: number, pause: PauseInterval) => {
+    const totalBreakTime = session.pauses.reduce<number>((acc, pause) => {
       const pauseEnd = pause.endTime || new Date();
       return acc + (pauseEnd.getTime() - pause.startTime.getTime());
     }, 0);
@@ -671,7 +656,7 @@ export function Timer() {
                   >
                     Pause
                   </Button>
-                  <Button
+                  <CustomButton
                     onClick={stopTimer}
                     size="lg"
                     radius="xl"
@@ -686,7 +671,7 @@ export function Timer() {
                     }}
                   >
                     Stop Timer
-                  </Button>
+                  </CustomButton>
                 </>
               ) : (
                 <>
@@ -705,7 +690,7 @@ export function Timer() {
                   >
                     Resume
                   </Button>
-                  <Button
+                  <CustomButton
                     onClick={stopTimer}
                     size="lg"
                     radius="xl"
@@ -720,7 +705,7 @@ export function Timer() {
                     }}
                   >
                     Stop Timer
-                  </Button>
+                  </CustomButton>
                 </>
               )
             )}
@@ -743,8 +728,8 @@ export function Timer() {
               style={{
                 tableLayout: 'fixed',
                 width: '100%',
-                '--mantine-color-dark-filled': '#0e0f11',
-                '--mantine-color-dark-filled-hover': '#141517'
+                '--mantine-color-dark-filled': '#0e0f11' as any,
+                '--mantine-color-dark-filled-hover': '#141517' as any
               }}
             >
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
