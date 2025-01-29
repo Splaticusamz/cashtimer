@@ -4,10 +4,9 @@ import { TimeInput } from '@mantine/dates';
 import { format, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
 import { TimerState, TimerSession } from '../types';
-import { IconTrash, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
-import { supabase } from '../lib/supabase';
 import { CustomButton } from './CustomButton';
 import { PauseInterval, EditValue, EditingSession } from '../types/timer';
+import { supabase } from '../lib/supabase';
 
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
@@ -629,7 +628,6 @@ export function Timer() {
                 size="lg"
                 radius="xl"
                 fullWidth
-                leftSection={<IconPlayerPlay size={20} />}
                 style={{ 
                   background: 'linear-gradient(135deg, #00e6d4 0%, #00b5a9 100%)',
                   border: 'none',
@@ -652,7 +650,6 @@ export function Timer() {
                       border: 'none',
                       boxShadow: '0 4px 24px rgba(255, 215, 0, 0.2)'
                     }}
-                    leftSection={<IconPlayerPause size={20} />}
                   >
                     Pause
                   </Button>
@@ -661,7 +658,6 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    rightIcon={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',
@@ -670,7 +666,7 @@ export function Timer() {
                       }
                     }}
                   >
-                    Stop Timer
+                    Stop
                   </CustomButton>
                 </>
               ) : (
@@ -686,7 +682,6 @@ export function Timer() {
                       border: 'none',
                       boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
                     }}
-                    leftSection={<IconPlayerPlay size={20} />}
                   >
                     Resume
                   </Button>
@@ -695,7 +690,6 @@ export function Timer() {
                     size="lg"
                     radius="xl"
                     fullWidth
-                    rightIcon={<IconPlayerStop size={20} />}
                     styles={{
                       root: {
                         background: '#1A1B1E',
@@ -704,7 +698,7 @@ export function Timer() {
                       }
                     }}
                   >
-                    Stop Timer
+                    Stop
                   </CustomButton>
                 </>
               )
