@@ -52,9 +52,9 @@ const formatDuration = (seconds: number): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-interface Pause {
+interface PauseInterval {
   startTime: Date;
-  endTime: Date | null;
+  endTime: Date | undefined;
 }
 
 export function Timer() {
@@ -83,8 +83,8 @@ export function Timer() {
     const endTime = session.endTime || now;
     
     // Calculate total break time in milliseconds
-    const totalBreakTime = session.pauses.reduce((acc: number, pause: Pause) => {
-      const pauseEnd = pause.endTime || now;
+    const totalBreakTime = session.pauses.reduce<number>((acc: number, pause: PauseInterval) => {
+      const pauseEnd = pause.endTime || new Date();
       return acc + (pauseEnd.getTime() - pause.startTime.getTime());
     }, 0);
     
