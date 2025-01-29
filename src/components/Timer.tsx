@@ -897,17 +897,18 @@ export function Timer() {
                   >
                     Pause
                   </Button>
-                  <Button 
-                    onClick={stopTimer} 
-                    color="#ff4757" 
+                  <Button
+                    onClick={stopTimer}
                     size="lg"
                     radius="xl"
-                    icon={<IconPlayerStop size={20} />}
-                    style={{
-                      flex: 1,
-                      background: '#1A1B1E',
-                      border: '1px solid #2C2E33',
-                      boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
+                    fullWidth
+                    leftSection={<IconPlayerStop size={20} />}
+                    styles={{
+                      root: {
+                        background: '#1A1B1E',
+                        border: '1px solid #2C2E33',
+                        boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
+                      }
                     }}
                   >
                     Stop
@@ -930,17 +931,18 @@ export function Timer() {
                   >
                     Resume
                   </Button>
-                  <Button 
-                    onClick={stopTimer} 
-                    color="#ff4757" 
+                  <Button
+                    onClick={stopTimer}
                     size="lg"
                     radius="xl"
-                    icon={<IconPlayerStop size={20} />}
-                    style={{
-                      flex: 1,
-                      background: '#1A1B1E',
-                      border: '1px solid #2C2E33',
-                      boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
+                    fullWidth
+                    leftSection={<IconPlayerStop size={20} />}
+                    styles={{
+                      root: {
+                        background: '#1A1B1E',
+                        border: '1px solid #2C2E33',
+                        boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
+                      }
                     }}
                   >
                     Stop
