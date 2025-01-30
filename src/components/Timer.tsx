@@ -27,7 +27,7 @@ const CURRENCIES: Currency[] = [
 type EditingSession = {
   id: string;
   field: 'startTime' | 'endTime' | `pause-${number}` | 'pause-new';
-  tempValue?: string | { start?: string; end?: string };
+  tempValue?: { start?: string; end?: string };
 };
 
 type SaveFunction = () => Promise<void>;
@@ -38,7 +38,8 @@ type EditValue = {
   datetime?: string;
 };
 
-const formatDuration = (seconds: number): string => {
+const formatDuration = (seconds: number | undefined) => {
+  if (typeof seconds === 'undefined') return '00:00:00';
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainingSeconds = seconds % 60;
@@ -59,7 +60,6 @@ export function Timer() {
   });
   
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [isEditingTime, setIsEditingTime] = useState(false);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [completedSession, setCompletedSession] = useState<TimerSession | null>(null);
   const [editingSession, setEditingSession] = useState<EditingSession | null>(null);
@@ -67,12 +67,12 @@ export function Timer() {
     USDCAD: 1.35
   });
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [selectedCurrency, setSelectedCurrency] = useState<Currency>(CURRENCIES[1]); // Default to CAD
+  const [showConversions, setShowConversions] = useState(true);
   const [rateCurrency, setRateCurrency] = useState<Currency>(CURRENCIES[0]);
   const [conversionCurrency, setConversionCurrency] = useState<Currency>(CURRENCIES[0]);
-  const [showConversions, setShowConversions] = useState(true);
 
-  const calculateEarnings = useCallback((session: TimerSession) => {
+  const calculateEarnings = useCallback((session: TimerSession | null) => {
+    if (!session) return 0;
     const now = new Date();
     const startTime = session.startTime;
     const endTime = session.endTime || now;
@@ -90,55 +90,6 @@ export function Timer() {
     // Convert to hours and calculate earnings
     return (activeTime / 3600000) * session.hourlyRate;
   }, []);
-
-  const adjustCurrentTime = (minutes: number) => {
-    if (!state.currentSession) return;
-    setState(prev => ({
-      ...prev,
-      currentSession: {
-        ...prev.currentSession!,
-        startTime: new Date(prev.currentSession!.startTime.getTime() + (minutes * 60000))
-      }
-    }));
-  };
-
-  const updateStartTime = (newTime: string) => {
-    if (!state.currentSession) return;
-    
-    try {
-      const [hours, minutes] = newTime.split(':').map(Number);
-      const currentDate = new Date(state.currentSession.startTime);
-      currentDate.setHours(hours);
-      currentDate.setMinutes(minutes);
-
-      setState(prev => {
-        if (!prev.currentSession) return prev;
-        
-        // Recalculate earnings with new start time
-        const totalTime = prev.currentSession.endTime ? 
-          (prev.currentSession.endTime.getTime() - currentDate.getTime()) : 
-          (new Date().getTime() - currentDate.getTime());
-        const breakTime = prev.currentSession.pauses.reduce((acc, pause) => {
-          const pauseEnd = pause.endTime || new Date();
-          return acc + (pauseEnd.getTime() - pause.startTime.getTime());
-        }, 0);
-        const activeTime = totalTime - breakTime;
-        const newEarnings = (activeTime / 3600000) * prev.currentSession.hourlyRate;
-
-        return {
-          ...prev,
-          currentSession: {
-            ...prev.currentSession,
-            startTime: currentDate,
-            earnings: newEarnings
-          }
-        };
-      });
-    } catch (e) {
-      console.error('Invalid time format');
-    }
-    setIsEditingTime(false);
-  };
 
   useEffect(() => {
     let intervalId: number;
@@ -190,55 +141,61 @@ export function Timer() {
   }, []);
 
   const fetchSessions = async () => {
-    const { data: sessions, error } = await supabase
+    const { data: sessionsData, error: sessionsError } = await supabase
       .from('timer_sessions')
-      .select(`
-        *,
-        session_pauses (*)
-      `)
-      .order('created_at', { ascending: false });
+      .select('*')
+      .order('start_time', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching sessions:', error);
+    if (sessionsError) {
+      console.error('Error fetching sessions:', sessionsError);
       return;
     }
 
-    setState(prev => ({
-      ...prev,
-      sessions: sessions.map(session => ({
-        ...session,
-        startTime: new Date(session.start_time),
-        endTime: session.end_time ? new Date(session.end_time) : null,
-        hourlyRate: session.hourly_rate,
-        earnings: session.earnings,
-        pauses: session.session_pauses.map((pause: any) => ({
-          startTime: new Date(pause.start_time),
-          endTime: pause.end_time ? new Date(pause.end_time) : null
-        }))
-      }))
-    }));
+    // Fetch pauses for each session
+    if (sessionsData) {
+      const sessions = await Promise.all(
+        sessionsData.map(async (session) => {
+          const { data: pausesData } = await supabase
+            .from('session_pauses')
+            .select('*')
+            .eq('session_id', session.id)
+            .order('start_time', { ascending: true });
+
+          return {
+            id: session.id,
+            startTime: new Date(session.start_time),
+            endTime: session.end_time ? new Date(session.end_time) : undefined,
+            hourlyRate: session.hourly_rate,
+            earnings: session.earnings,
+            pauses: (pausesData || []).map(pause => ({
+              startTime: new Date(pause.start_time),
+              endTime: pause.end_time ? new Date(pause.end_time) : undefined
+            }))
+          };
+        })
+      );
+
+      setState(prev => ({ ...prev, sessions }));
+    }
   };
 
   const startTimer = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      console.error('No authenticated user');
-      return;
-    }
-
-    const session = {
-      start_time: new Date().toISOString(),
-      hourly_rate: state.hourlyRate,
+    const session: TimerSession = {
+      id: crypto.randomUUID(),
+      startTime: new Date(),
+      hourlyRate: state.hourlyRate,
       earnings: 0,
-      user_id: user.id  // Use the actual user ID
+      pauses: []
     };
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('timer_sessions')
-      .insert([session])
-      .select()
-      .single();
+      .insert({
+        id: session.id,
+        start_time: session.startTime.toISOString(),
+        hourly_rate: session.hourlyRate,
+        earnings: 0
+      });
 
     if (error) {
       console.error('Error starting timer:', error);
@@ -248,14 +205,7 @@ export function Timer() {
     setState(prev => ({
       ...prev,
       isRunning: true,
-      isPaused: false,
-      currentSession: {
-        id: data.id,
-        startTime: new Date(data.start_time),
-        hourlyRate: data.hourly_rate,
-        earnings: 0,
-        pauses: []
-      }
+      currentSession: session
     }));
   };
 
@@ -263,74 +213,64 @@ export function Timer() {
     if (!state.currentSession) return;
 
     const pause = {
-      session_id: state.currentSession.id,
-      start_time: new Date().toISOString()
+      id: crypto.randomUUID(),
+      startTime: new Date(),
+      endTime: null
     };
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('session_pauses')
-      .insert([pause])
-      .select()
-      .single();
+      .insert({
+        session_id: state.currentSession.id,
+        start_time: pause.startTime.toISOString()
+      });
 
     if (error) {
-      console.error('Error creating pause:', error);
+      console.error('Error adding pause:', error);
       return;
     }
 
-    setState(prev => {
-      if (!prev.currentSession) return prev;
-
-      return {
+    setState(prev => ({
         ...prev,
         isPaused: true,
-        currentSession: {
-          ...prev.currentSession,
-          pauses: [
-            ...prev.currentSession.pauses,
-            { startTime: new Date(data.start_time) }
-          ]
-        }
-      };
-    });
+      currentSession: prev.currentSession ? {
+        ...prev.currentSession,
+        pauses: [...prev.currentSession.pauses, pause]
+      } : null
+    }));
   };
 
   const resumeTimer = async () => {
     if (!state.currentSession) return;
-    
+
     const lastPause = state.currentSession.pauses[state.currentSession.pauses.length - 1];
-    
+    if (!lastPause) return;
+
+    const endTime = new Date();
+
     const { error } = await supabase
       .from('session_pauses')
-      .update({ end_time: new Date().toISOString() })
+      .update({ end_time: endTime.toISOString() })
       .eq('session_id', state.currentSession.id)
       .is('end_time', null);
 
     if (error) {
-      console.error('Error updating pause:', error);
+      console.error('Error ending pause:', error);
       return;
     }
 
-    setState(prev => {
-      if (!prev.currentSession) return prev;
-
-      const updatedPauses = [...prev.currentSession.pauses];
-      if (lastPause) {
-        updatedPauses[updatedPauses.length - 1] = {
-          ...lastPause,
-          endTime: new Date()
-        };
-      }
-
-      return {
+    setState(prev => ({
         ...prev,
         isPaused: false,
-        currentSession: {
+      currentSession: prev.currentSession ? {
           ...prev.currentSession,
-          pauses: updatedPauses
-        }
-      };
-    });
+        pauses: prev.currentSession.pauses.map((p, i) => 
+          i === prev.currentSession.pauses.length - 1 
+            ? { ...p, endTime }
+            : p
+        )
+      } : null
+    }));
   };
 
   const stopTimer = async () => {
@@ -366,7 +306,7 @@ export function Timer() {
       return;
     }
 
-    const finalSession = {
+      const finalSession = {
       ...state.currentSession,
       endTime,
       earnings: finalEarnings,
@@ -374,24 +314,24 @@ export function Timer() {
         ...pause,
         endTime: pause.endTime || endTime // Ensure all pauses are ended
       }))
-    };
+      };
 
-    confetti({
-      particleCount: 150,
-      spread: 80,
-      origin: { y: 0.5 },
-      colors: ['#00b341', '#009e3a', '#008531'],
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.5 },
+        colors: ['#00b341', '#009e3a', '#008531'],
       zIndex: 100000
-    });
+      });
 
-    setCompletedSession(finalSession);
-    setSummaryModalOpen(true);
+      setCompletedSession(finalSession);
+      setSummaryModalOpen(true);
 
     setState(prev => ({
-      ...prev,
-      isRunning: false,
-      isPaused: false,
-      currentSession: null,
+        ...prev,
+        isRunning: false,
+        isPaused: false,
+        currentSession: null,
       sessions: [finalSession, ...prev.sessions]
     }));
   };
@@ -467,56 +407,6 @@ export function Timer() {
     });
   };
 
-  // Extract the save function
-  const saveBreak = async (session: TimerSession, tempValue: { start?: string; end?: string }) => {
-    if (!tempValue?.start || !tempValue?.end) {
-      setEditingSession(null);
-      return;
-    }
-
-    const startDate = new Date(session.startTime);
-    const [startHours, startMinutes] = tempValue.start.split(':').map(Number);
-    startDate.setHours(startHours, startMinutes);
-
-    const endDate = new Date(session.startTime);
-    const [endHours, endMinutes] = tempValue.end.split(':').map(Number);
-    endDate.setHours(endHours, endMinutes);
-
-    const { data, error } = await supabase
-      .from('session_pauses')
-      .insert([{
-        session_id: session.id,
-        start_time: startDate.toISOString(),
-        end_time: endDate.toISOString()
-      }])
-      .select()
-      .single();
-
-    if (!error) {
-      setState(prev => ({
-        ...prev,
-        sessions: prev.sessions.map(s => {
-          if (s.id !== session.id) return s;
-          const newPause = {
-            startTime: startDate,
-            endTime: endDate
-          };
-          const updatedPauses = [...s.pauses, newPause];
-          return { ...s, pauses: updatedPauses };
-        })
-      }));
-    }
-    setEditingSession(null);
-  };
-
-  // Add this function to handle datetime string parsing
-  const parseDateTime = (date: Date, timeStr: string): Date => {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    const newDate = new Date(date);
-    newDate.setHours(hours, minutes, 0, 0);
-    return newDate;
-  };
-
   // Update the handleSave function to handle current session
   const handleSave = async (type: 'start' | 'end' | 'break', session: TimerSession, breakIndex?: number) => {
     if (!editingSession?.tempValue) return;
@@ -559,8 +449,8 @@ export function Timer() {
           .eq('id', session.id);
 
         if (!error) {
-          setState(prev => ({
-            ...prev,
+    setState(prev => ({
+      ...prev,
             sessions: prev.sessions.map(s => {
               if (s.id !== session.id) return s;
               return {
@@ -669,140 +559,6 @@ export function Timer() {
     }));
   };
 
-  // Update the handleKeyPress function
-  const handleKeyPress = (e: React.KeyboardEvent, onSave: () => void) => {
-    if (e.key === 'Enter') {
-      e.preventDefault(); // Add this to prevent form submission
-      onSave();
-    }
-  };
-
-  // Add this function before the return statement
-  const handleStartTimeEdit = async (sessionId: string, newTimeStr: string) => {
-    const newDate = new Date(newTimeStr);
-    if (!isNaN(newDate.getTime())) {
-      const { error } = await supabase
-        .from('timer_sessions')
-        .update({ 
-          start_time: newDate.toISOString(),
-          earnings: calculateSessionEarnings(newDate, session.endTime || new Date(), session.hourlyRate)
-        })
-        .eq('id', sessionId);
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== sessionId) return s;
-            const newEarnings = calculateSessionEarnings(newDate, s.endTime || new Date(), s.hourlyRate);
-            return { ...s, startTime: newDate, earnings: newEarnings };
-          })
-        }));
-      }
-    }
-    setEditingSession(null);
-  };
-
-  // Add this function alongside other handlers
-  const handleEndTimeEdit = async (sessionId: string, newTimeStr: string) => {
-    const newDate = new Date(newTimeStr);
-    if (!isNaN(newDate.getTime())) {
-      const { error } = await supabase
-        .from('timer_sessions')
-        .update({ 
-          end_time: newDate.toISOString(),
-          earnings: calculateSessionEarnings(session.startTime, newDate, session.hourlyRate)
-        })
-        .eq('id', sessionId);
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== sessionId) return s;
-            const newEarnings = calculateSessionEarnings(s.startTime, newDate, s.hourlyRate);
-            return { ...s, endTime: newDate, earnings: newEarnings };
-          })
-        }));
-      }
-    }
-    setEditingSession(null);
-  };
-
-  // Update the break edit handler
-  const handleBreakEdit = async (
-    session: TimerSession, 
-    index: number, 
-    tempValue: { start?: string; end?: string }
-  ) => {
-    if (!tempValue?.start || !tempValue?.end) {
-      setEditingSession(null);
-      return;
-    }
-
-    const startDate = new Date(session.startTime);
-    const [startHours, startMinutes] = tempValue.start.split(':').map(Number);
-    startDate.setHours(startHours, startMinutes);
-
-    const endDate = new Date(session.startTime);
-    const [endHours, endMinutes] = tempValue.end.split(':').map(Number);
-    endDate.setHours(endHours, endMinutes);
-
-    // For existing breaks
-    if (typeof index === 'number' && index < session.pauses.length) {
-      const { error } = await supabase
-        .from('session_pauses')
-        .update({
-          start_time: startDate.toISOString(),
-          end_time: endDate.toISOString()
-        })
-        .eq('session_id', session.id)
-        .eq('start_time', session.pauses[index].startTime.toISOString());
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== session.id) return s;
-            const updatedPauses = [...s.pauses];
-            updatedPauses[index] = {
-              startTime: startDate,
-              endTime: endDate
-            };
-            return { ...s, pauses: updatedPauses };
-          })
-        }));
-      }
-    } else {
-      // For new breaks
-      const { error } = await supabase
-        .from('session_pauses')
-        .insert([{
-          session_id: session.id,
-          start_time: startDate.toISOString(),
-          end_time: endDate.toISOString()
-        }])
-        .select()
-        .single();
-
-      if (!error) {
-        setState(prev => ({
-          ...prev,
-          sessions: prev.sessions.map(s => {
-            if (s.id !== session.id) return s;
-            const newPause = {
-              startTime: startDate,
-              endTime: endDate
-            };
-            const updatedPauses = [...s.pauses, newPause];
-            return { ...s, pauses: updatedPauses };
-          })
-        }));
-      }
-    }
-    setEditingSession(null);
-  };
-
   useEffect(() => {
     fetchSessions();
   }, []);
@@ -857,15 +613,15 @@ export function Timer() {
               <input
                 type="number"
                 className="rate-input"
-                value={state.hourlyRate}
+              value={state.hourlyRate}
                 onChange={(e) => setState(prev => ({ ...prev, hourlyRate: Number(e.target.value) || 0 }))}
                 min="0"
                 step="0.01"
-                disabled={state.isRunning}
+              disabled={state.isRunning}
               />
             </div>
 
-            {state.currentSession && (
+        {state.currentSession && (
               <>
                 <span className="label">
                   STARTED TIME
@@ -910,8 +666,8 @@ export function Timer() {
                       id: state.currentSession.id, 
                       field: 'startTime' 
                     })}
-                  >
-                    {format(state.currentSession.startTime, 'h:mm a')}
+                    >
+                      {format(state.currentSession.startTime, 'h:mm a')}
                   </span>
                 )}
               </>
@@ -955,31 +711,31 @@ export function Timer() {
               !state.isPaused ? (
                 <>
                   <button 
-                    onClick={pauseTimer} 
+                      onClick={pauseTimer} 
                     className="btn btn-lg btn-warning"
                   >
                     <IconPlayerPause size={20} />
-                    Pause
+                      Pause
                   </button>
                   <button 
-                    onClick={stopTimer} 
+                      onClick={stopTimer} 
                     className="btn btn-danger btn-lg btn-full"
                   >
                     <IconPlayerStop size={20} />
                     Stop
                   </button>
-                </>
-              ) : (
-                <>
+                  </>
+                ) : (
+                  <>
                   <button 
-                    onClick={resumeTimer} 
+                      onClick={resumeTimer} 
                     className="btn btn-primary btn-lg btn-full"
                   >
                     <IconPlayerPlay size={20} />
-                    Resume
+                      Resume
                   </button>
                   <button 
-                    onClick={stopTimer} 
+                      onClick={stopTimer} 
                     className="btn btn-danger btn-lg btn-full"
                   >
                     <IconPlayerStop size={20} />
@@ -1042,7 +798,7 @@ export function Timer() {
                             {session.pauses.length}
                           </span>
                         </div>
-                      </td>
+                    </td>
                       <td className="table-cell">
                         {editingSession?.id === session.id && editingSession.field === 'startTime' ? (
                           <div className="full-width">
@@ -1076,7 +832,7 @@ export function Timer() {
                             {format(session.startTime, 'MMM d, h:mm a')}
                           </span>
                         )}
-                      </td>
+                    </td>
                       <td className="table-cell">
                         {editingSession?.id === session.id && editingSession.field === 'endTime' ? (
                           <div className="full-width">
@@ -1382,7 +1138,7 @@ export function Timer() {
                   <span className="summary-amount">
                     ${completedSession?.earnings.toFixed(2)}
                   </span>
-                  {completedSession?.pauses?.length > 0 && (
+                  {completedSession && completedSession.pauses && completedSession.pauses.length > 0 && (
                     <span className="summary-breaks">
                       with {completedSession.pauses.length} break{completedSession.pauses.length > 1 ? 's' : ''}
                     </span>
@@ -1429,7 +1185,7 @@ export function Timer() {
 
                 <button 
                   className="btn btn-primary btn-xl btn-full"
-                  onClick={() => setSummaryModalOpen(false)}
+                  onClick={() => setSummaryModalOpen(false)} 
                 >
                   Close
                 </button>

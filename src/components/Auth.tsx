@@ -15,7 +15,6 @@ export function Auth({ onAuth }: AuthProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthState>('login');
-  const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
 
   // Add email validation function
   const isValidEmail = (email: string): boolean => {
