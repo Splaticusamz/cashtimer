@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import '../styles/Auth.css';
 import { supabase } from '../lib/supabase';
 
@@ -51,8 +51,7 @@ export function Auth({ onAuth }: AuthProps) {
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: { email },
-          emailLinkExpiresIn: 24 * 60 * 60 // 24 hours in seconds
+          data: { email }
         }
       });
       

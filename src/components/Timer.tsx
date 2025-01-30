@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
 import { format, parse, differenceInMinutes, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
-import { TimerState, TimerSession } from '../types';
+import { TimerState, TimerSession, SessionPause, ExchangeRate } from '../types';
 import { IconTrash, IconEdit, IconClock, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
 import { supabase, signInAnonymously } from '../lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,11 +23,6 @@ const CURRENCIES: Currency[] = [
   { code: 'GBP', symbol: '£', flag: '🇬🇧', name: 'British Pound' },
   { code: 'AUD', symbol: '$', flag: '🇦🇺', name: 'Australian Dollar' },
 ];
-
-type ExchangeRate = {
-  [key: string]: number;
-  lastUpdated: Date;
-};
 
 type EditingSession = {
   id: string;
@@ -69,8 +64,7 @@ export function Timer() {
   const [completedSession, setCompletedSession] = useState<TimerSession | null>(null);
   const [editingSession, setEditingSession] = useState<EditingSession | null>(null);
   const [exchangeRate, setExchangeRate] = useState<ExchangeRate>({
-    USDCAD: 1.35, // Default fallback rate
-    lastUpdated: new Date()
+    USDCAD: 1.35
   });
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(CURRENCIES[1]); // Default to CAD
@@ -1388,7 +1382,7 @@ export function Timer() {
                   <span className="summary-amount">
                     ${completedSession?.earnings.toFixed(2)}
                   </span>
-                  {completedSession?.pauses.length > 0 && (
+                  {completedSession?.pauses?.length > 0 && (
                     <span className="summary-breaks">
                       with {completedSession.pauses.length} break{completedSession.pauses.length > 1 ? 's' : ''}
                     </span>
