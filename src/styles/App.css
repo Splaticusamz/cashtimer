@@ -1,0 +1,14 @@
+.app {
+  min-height: 100vh;
+  background-color: #141517;
+  color: #C1C2C5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+button {
+  font-family: inherit;
+}
+
+input {
+  font-family: inherit;
+} 

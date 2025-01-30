@@ -28,19 +28,4 @@ export interface Database {
       };
     };
   };
-}
-
-export interface TimerSession {
-  id: string;
-  start_time: string;
-  end_time: string | null;
-  hourly_rate: number;
-  earnings: number;
-  user_id: string;
-  pauses: SessionPause[];
-}
-
-export interface SessionPause {
-  start_time: string;
-  end_time: string | null;
-}
+} 

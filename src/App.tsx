@@ -1,10 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { MantineProvider } from '@mantine/core';
-import { ModalsProvider } from '@mantine/modals';
+import './styles/App.css';
 import { Timer } from './components/Timer';
 import { Auth } from './components/Auth';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
+import { AuthCallback } from './pages/AuthCallback';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -27,69 +27,33 @@ function App() {
   }
 
   return (
-    <MantineProvider
-      withGlobalStyles
-      withNormalizeCSS
-      theme={{
-        colorScheme: 'dark',
-        primaryColor: 'teal',
-        fontFamily: 'Inter, sans-serif',
-        headings: { fontFamily: 'Inter, sans-serif' },
-        components: {
-          Button: {
-            styles: {
-              root: { 
-                fontWeight: 600,
-                borderRadius: '12px',
-                fontSize: '1rem'
-              }
-            }
-          },
-          Paper: {
-            styles: {
-              root: {
-                borderRadius: '16px',
-                backgroundColor: '#1A1B1E'
-              }
-            }
-          }
-        }
-      }}
-    >
-      <ModalsProvider>
-        <Box 
-          sx={{ 
-            minHeight: '100vh', 
-            backgroundColor: '#141517'
-          }}
-        >
-          <BrowserRouter>
-            <Routes>
-              <Route 
-                path="/login" 
-                element={
-                  !isAuthenticated ? (
-                    <Auth onAuth={() => setIsAuthenticated(true)} />
-                  ) : (
-                    <Navigate to="/" replace />
-                  )
-                } 
-              />
-              <Route 
-                path="/" 
-                element={
-                  isAuthenticated ? (
-                    <Timer />
-                  ) : (
-                    <Navigate to="/login" replace />
-                  )
-                } 
-              />
-            </Routes>
-          </BrowserRouter>
-        </Box>
-      </ModalsProvider>
-    </MantineProvider>
+    <div className="app">
+      <BrowserRouter>
+        <Routes>
+          <Route 
+            path="/login" 
+            element={
+              !isAuthenticated ? (
+                <Auth onAuth={() => setIsAuthenticated(true)} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            } 
+          />
+          <Route 
+            path="/" 
+            element={
+              isAuthenticated ? (
+                <Timer />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            } 
+          />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+        </Routes>
+      </BrowserRouter>
+    </div>
   );
 }
 

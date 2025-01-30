@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback, Fragment } from 'react';
-import { Button, NumberInput, Table, Stack, Text, Group, Paper, Container, ActionIcon } from '@mantine/core';
-import { format, differenceInSeconds } from 'date-fns';
+import React, { useState, useEffect, useCallback, Fragment } from 'react';
+import { format, parse, differenceInMinutes, differenceInSeconds } from 'date-fns';
 import confetti from 'canvas-confetti';
 import { TimerState, TimerSession } from '../types';
-import { CustomButton } from './CustomButton';
-import { EditValue, EditingSession } from '../types/timer';
-import { supabase } from '../lib/supabase';
-import { IconTrash, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
+import { IconTrash, IconEdit, IconClock, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
+import { supabase, signInAnonymously } from '../lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
+import '../styles/Timer.css';
 
 const TICK_INTERVAL = 100; // Update every 100ms for smooth earnings display
 
@@ -27,7 +26,21 @@ const CURRENCIES: Currency[] = [
 
 type ExchangeRate = {
   [key: string]: number;
-  lastUpdated: number;  // Change from Date to number, store timestamp instead
+  lastUpdated: Date;
+};
+
+type EditingSession = {
+  id: string;
+  field: 'startTime' | 'endTime' | `pause-${number}` | 'pause-new';
+  tempValue?: string | { start?: string; end?: string };
+};
+
+type SaveFunction = () => Promise<void>;
+
+type EditValue = {
+  start?: string;
+  end?: string;
+  datetime?: string;
 };
 
 const formatDuration = (seconds: number): string => {
@@ -41,10 +54,6 @@ const formatDuration = (seconds: number): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const isEditValue = (value: unknown): value is EditValue => {
-  return typeof value === 'object' && value !== null && ('start' in value || 'end' in value);
-};
-
 export function Timer() {
   const [state, setState] = useState<TimerState>({
     isRunning: false,
@@ -55,15 +64,19 @@ export function Timer() {
   });
   
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [isEditingTime, setIsEditingTime] = useState(false);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [completedSession, setCompletedSession] = useState<TimerSession | null>(null);
   const [editingSession, setEditingSession] = useState<EditingSession | null>(null);
   const [exchangeRate, setExchangeRate] = useState<ExchangeRate>({
-    USDCAD: 1.35,
-    lastUpdated: Date.now() // Use timestamp instead of Date object
+    USDCAD: 1.35, // Default fallback rate
+    lastUpdated: new Date()
   });
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(CURRENCIES[1]); // Default to CAD
+  const [rateCurrency, setRateCurrency] = useState<Currency>(CURRENCIES[0]);
+  const [conversionCurrency, setConversionCurrency] = useState<Currency>(CURRENCIES[0]);
+  const [showConversions, setShowConversions] = useState(true);
 
   const calculateEarnings = useCallback((session: TimerSession) => {
     const now = new Date();
@@ -71,8 +84,8 @@ export function Timer() {
     const endTime = session.endTime || now;
     
     // Calculate total break time in milliseconds
-    const totalBreakTime = session.pauses.reduce<number>((acc, pause) => {
-      const pauseEnd = pause.endTime || new Date();
+    const totalBreakTime = session.pauses.reduce((acc, pause) => {
+      const pauseEnd = pause.endTime || now;
       return acc + (pauseEnd.getTime() - pause.startTime.getTime());
     }, 0);
     
@@ -83,6 +96,55 @@ export function Timer() {
     // Convert to hours and calculate earnings
     return (activeTime / 3600000) * session.hourlyRate;
   }, []);
+
+  const adjustCurrentTime = (minutes: number) => {
+    if (!state.currentSession) return;
+    setState(prev => ({
+      ...prev,
+      currentSession: {
+        ...prev.currentSession!,
+        startTime: new Date(prev.currentSession!.startTime.getTime() + (minutes * 60000))
+      }
+    }));
+  };
+
+  const updateStartTime = (newTime: string) => {
+    if (!state.currentSession) return;
+    
+    try {
+      const [hours, minutes] = newTime.split(':').map(Number);
+      const currentDate = new Date(state.currentSession.startTime);
+      currentDate.setHours(hours);
+      currentDate.setMinutes(minutes);
+
+      setState(prev => {
+        if (!prev.currentSession) return prev;
+        
+        // Recalculate earnings with new start time
+        const totalTime = prev.currentSession.endTime ? 
+          (prev.currentSession.endTime.getTime() - currentDate.getTime()) : 
+          (new Date().getTime() - currentDate.getTime());
+        const breakTime = prev.currentSession.pauses.reduce((acc, pause) => {
+          const pauseEnd = pause.endTime || new Date();
+          return acc + (pauseEnd.getTime() - pause.startTime.getTime());
+        }, 0);
+        const activeTime = totalTime - breakTime;
+        const newEarnings = (activeTime / 3600000) * prev.currentSession.hourlyRate;
+
+        return {
+          ...prev,
+          currentSession: {
+            ...prev.currentSession,
+            startTime: currentDate,
+            earnings: newEarnings
+          }
+        };
+      });
+    } catch (e) {
+      console.error('Invalid time format');
+    }
+    setIsEditingTime(false);
+  };
 
   useEffect(() => {
     let intervalId: number;
@@ -121,7 +183,7 @@ export function Timer() {
         const data = await response.json();
         setExchangeRate({
           ...data.rates,
-          lastUpdated: Date.now()
+          lastUpdated: new Date()
         });
       } catch (error) {
         console.error('Failed to fetch exchange rate:', error);
@@ -325,6 +387,7 @@ export function Timer() {
       spread: 80,
       origin: { y: 0.5 },
       colors: ['#00b341', '#009e3a', '#008531'],
+      zIndex: 100000
     });
 
     setCompletedSession(finalSession);
@@ -339,11 +402,45 @@ export function Timer() {
     }));
   };
 
-  const deleteSession = (sessionId: string) => {
-    setState(prev => ({
-      ...prev,
-      sessions: prev.sessions.filter(s => s.id !== sessionId)
-    }));
+  const deleteSession = async (sessionId: string) => {
+    try {
+      // First delete all pauses for this session
+      const { error: pauseError } = await supabase
+        .from('session_pauses')
+        .delete()
+        .eq('session_id', sessionId);
+
+      if (pauseError) {
+        console.error('Error deleting pauses:', pauseError);
+        return;
+      }
+
+      // Then delete the session itself
+      const { error: sessionError } = await supabase
+        .from('timer_sessions')
+        .delete()
+        .eq('id', sessionId);
+
+      if (sessionError) {
+        console.error('Error deleting session:', sessionError);
+        return;
+      }
+
+      // Update local state only after successful database deletion
+      setState(prev => ({
+        ...prev,
+        sessions: prev.sessions.filter(s => s.id !== sessionId),
+        // Clear current session if it was deleted
+        currentSession: prev.currentSession?.id === sessionId ? null : prev.currentSession
+      }));
+    } catch (error) {
+      console.error('Error in deleteSession:', error);
+    }
+  };
+
+  const calculateSessionEarnings = (startTime: Date, endTime: Date, hourlyRate: number): number => {
+    const durationInHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+    return durationInHours * hourlyRate;
   };
 
   const toggleRowExpansion = (sessionId: string) => {
@@ -376,63 +473,340 @@ export function Timer() {
     });
   };
 
-  // Replace handleSave with this simpler version
-  const handleSave = async (type: 'start' | 'end' | 'break', session: TimerSession, index?: number) => {
+  // Extract the save function
+  const saveBreak = async (session: TimerSession, tempValue: { start?: string; end?: string }) => {
+    if (!tempValue?.start || !tempValue?.end) {
+      setEditingSession(null);
+      return;
+    }
+
+    const startDate = new Date(session.startTime);
+    const [startHours, startMinutes] = tempValue.start.split(':').map(Number);
+    startDate.setHours(startHours, startMinutes);
+
+    const endDate = new Date(session.startTime);
+    const [endHours, endMinutes] = tempValue.end.split(':').map(Number);
+    endDate.setHours(endHours, endMinutes);
+
+    const { data, error } = await supabase
+      .from('session_pauses')
+      .insert([{
+        session_id: session.id,
+        start_time: startDate.toISOString(),
+        end_time: endDate.toISOString()
+      }])
+      .select()
+      .single();
+
+    if (!error) {
+      setState(prev => ({
+        ...prev,
+        sessions: prev.sessions.map(s => {
+          if (s.id !== session.id) return s;
+          const newPause = {
+            startTime: startDate,
+            endTime: endDate
+          };
+          const updatedPauses = [...s.pauses, newPause];
+          return { ...s, pauses: updatedPauses };
+        })
+      }));
+    }
+    setEditingSession(null);
+  };
+
+  // Add this function to handle datetime string parsing
+  const parseDateTime = (date: Date, timeStr: string): Date => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const newDate = new Date(date);
+    newDate.setHours(hours, minutes, 0, 0);
+    return newDate;
+  };
+
+  // Update the handleSave function to handle current session
+  const handleSave = async (type: 'start' | 'end' | 'break', session: TimerSession, breakIndex?: number) => {
     if (!editingSession?.tempValue) return;
 
     try {
-      if (type === 'break') {
-        const value = editingSession.tempValue as EditValue;
-        if (!value.start || !value.end) return;
+      if (type === 'start' || type === 'end') {
+        const tempValue = editingSession.tempValue as string;
+        if (!tempValue) return;
 
-        const startDate = new Date(session.startTime);
-        const [startHours, startMinutes] = value.start.split(':').map(Number);
-        startDate.setHours(startHours, startMinutes);
+        const newDateTime = new Date(tempValue);
+        if (isNaN(newDateTime.getTime())) return;
 
-        const endDate = new Date(session.startTime);
-        const [endHours, endMinutes] = value.end.split(':').map(Number);
-        endDate.setHours(endHours, endMinutes);
-
-        if (index !== undefined && index < session.pauses.length) {
-          // Update existing break
-          await supabase
-            .from('session_pauses')
-            .update({
-              start_time: startDate.toISOString(),
-              end_time: endDate.toISOString()
-            })
-            .eq('session_id', session.id)
-            .eq('start_time', session.pauses[index].startTime.toISOString());
-        } else {
-          // Add new break
-          await supabase
-            .from('session_pauses')
-            .insert([{
-              session_id: session.id,
-              start_time: startDate.toISOString(),
-              end_time: endDate.toISOString()
-            }]);
+        // Check for negative duration
+        const startTime = type === 'start' ? newDateTime : session.startTime;
+        const endTime = type === 'end' ? newDateTime : session.endTime;
+        
+        if (endTime && startTime > endTime) {
+          alert('Start time cannot be after end time');
+          return;
         }
 
-        await fetchSessions(); // Refresh all data
-      } else {
-        const newDate = new Date(editingSession.tempValue as string);
-        if (isNaN(newDate.getTime())) return;
+        // Calculate new earnings based on duration and breaks
+        let newEarnings = session.hourlyRate;
+        if (endTime) {
+          const totalTime = endTime.getTime() - startTime.getTime();
+          const breakTime = session.pauses.reduce((acc, pause) => {
+            const pauseEnd = pause.endTime || endTime;
+            return acc + (pauseEnd.getTime() - pause.startTime.getTime());
+          }, 0);
+          const activeTime = totalTime - breakTime;
+          newEarnings = (activeTime / 3600000) * session.hourlyRate;
+        }
 
-        await supabase
+        const { error } = await supabase
           .from('timer_sessions')
           .update({ 
-            [type === 'start' ? 'start_time' : 'end_time']: newDate.toISOString()
+            [`${type === 'start' ? 'start_time' : 'end_time'}`]: newDateTime.toISOString(),
+            earnings: newEarnings
           })
           .eq('id', session.id);
 
-        await fetchSessions(); // Refresh all data
+        if (!error) {
+          setState(prev => ({
+            ...prev,
+            sessions: prev.sessions.map(s => {
+              if (s.id !== session.id) return s;
+              return {
+                ...s,
+                [type === 'start' ? 'startTime' : 'endTime']: newDateTime,
+                earnings: newEarnings
+              };
+            }),
+            // Update current session if it's being edited
+            currentSession: prev.currentSession?.id === session.id ? {
+              ...prev.currentSession,
+              [type === 'start' ? 'startTime' : 'endTime']: newDateTime,
+              earnings: newEarnings
+            } : prev.currentSession
+          }));
+        }
+      } else if (type === 'break' && typeof breakIndex === 'number') {
+        const tempValue = editingSession.tempValue as { start: string; end: string };
+        if (!tempValue.start) return;
+
+        // Create dates from time strings
+        const startDate = new Date(session.startTime);
+        const [startHours, startMinutes] = tempValue.start.split(':').map(Number);
+        startDate.setHours(startHours, startMinutes, 0, 0);
+
+        let endDate = null;
+        if (tempValue.end) {
+          endDate = new Date(session.startTime);
+          const [endHours, endMinutes] = tempValue.end.split(':').map(Number);
+          endDate.setHours(endHours, endMinutes, 0, 0);
+
+          // Check for negative duration in breaks
+          if (startDate > endDate) {
+            alert('Break start time cannot be after end time');
+            return;
+          }
+        }
+
+        if (breakIndex < session.pauses.length) {
+          // Update existing break
+          const { error } = await supabase
+            .from('session_pauses')
+            .update({
+              start_time: startDate.toISOString(),
+              end_time: endDate?.toISOString() || null
+            })
+            .eq('session_id', session.id)
+            .eq('start_time', session.pauses[breakIndex].startTime.toISOString());
+
+          if (!error) {
+            updateSessionWithNewBreak(session.id, breakIndex, startDate, endDate);
+          }
+        } else {
+          // Add new break
+          const { error } = await supabase
+            .from('session_pauses')
+            .insert({
+              session_id: session.id,
+              start_time: startDate.toISOString(),
+              end_time: endDate?.toISOString() || null
+            });
+
+          if (!error) {
+            updateSessionWithNewBreak(session.id, breakIndex, startDate, endDate);
+          }
+        }
       }
     } catch (error) {
-      console.error('Save error:', error);
-    } finally {
-      setEditingSession(null);
+      console.error('Error saving:', error);
     }
+
+    setEditingSession(null);
+  };
+
+  // Add helper function to update session with new break
+  const updateSessionWithNewBreak = (sessionId: string, breakIndex: number, startTime: Date, endTime: Date | null) => {
+    setState(prev => ({
+      ...prev,
+      sessions: prev.sessions.map(s => {
+        if (s.id !== sessionId) return s;
+
+        const newPauses = [...s.pauses];
+        if (breakIndex < newPauses.length) {
+          newPauses[breakIndex] = { startTime, endTime };
+        } else {
+          newPauses.push({ startTime, endTime });
+        }
+
+        // Recalculate earnings
+        const totalTime = s.endTime ? 
+          (s.endTime.getTime() - s.startTime.getTime()) : 
+          (new Date().getTime() - s.startTime.getTime());
+        const breakTime = newPauses.reduce((acc, p) => {
+          const pEnd = p.endTime || new Date();
+          return acc + (pEnd.getTime() - p.startTime.getTime());
+        }, 0);
+        const activeTime = totalTime - breakTime;
+        const newEarnings = (activeTime / 3600000) * s.hourlyRate;
+
+        return {
+          ...s,
+          pauses: newPauses,
+          earnings: newEarnings
+        };
+      })
+    }));
+  };
+
+  // Update the handleKeyPress function
+  const handleKeyPress = (e: React.KeyboardEvent, onSave: () => void) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Add this to prevent form submission
+      onSave();
+    }
+  };
+
+  // Add this function before the return statement
+  const handleStartTimeEdit = async (sessionId: string, newTimeStr: string) => {
+    const newDate = new Date(newTimeStr);
+    if (!isNaN(newDate.getTime())) {
+      const { error } = await supabase
+        .from('timer_sessions')
+        .update({ 
+          start_time: newDate.toISOString(),
+          earnings: calculateSessionEarnings(newDate, session.endTime || new Date(), session.hourlyRate)
+        })
+        .eq('id', sessionId);
+
+      if (!error) {
+        setState(prev => ({
+          ...prev,
+          sessions: prev.sessions.map(s => {
+            if (s.id !== sessionId) return s;
+            const newEarnings = calculateSessionEarnings(newDate, s.endTime || new Date(), s.hourlyRate);
+            return { ...s, startTime: newDate, earnings: newEarnings };
+          })
+        }));
+      }
+    }
+    setEditingSession(null);
+  };
+
+  // Add this function alongside other handlers
+  const handleEndTimeEdit = async (sessionId: string, newTimeStr: string) => {
+    const newDate = new Date(newTimeStr);
+    if (!isNaN(newDate.getTime())) {
+      const { error } = await supabase
+        .from('timer_sessions')
+        .update({ 
+          end_time: newDate.toISOString(),
+          earnings: calculateSessionEarnings(session.startTime, newDate, session.hourlyRate)
+        })
+        .eq('id', sessionId);
+
+      if (!error) {
+        setState(prev => ({
+          ...prev,
+          sessions: prev.sessions.map(s => {
+            if (s.id !== sessionId) return s;
+            const newEarnings = calculateSessionEarnings(s.startTime, newDate, s.hourlyRate);
+            return { ...s, endTime: newDate, earnings: newEarnings };
+          })
+        }));
+      }
+    }
+    setEditingSession(null);
+  };
+
+  // Update the break edit handler
+  const handleBreakEdit = async (
+    session: TimerSession, 
+    index: number, 
+    tempValue: { start?: string; end?: string }
+  ) => {
+    if (!tempValue?.start || !tempValue?.end) {
+      setEditingSession(null);
+      return;
+    }
+
+    const startDate = new Date(session.startTime);
+    const [startHours, startMinutes] = tempValue.start.split(':').map(Number);
+    startDate.setHours(startHours, startMinutes);
+
+    const endDate = new Date(session.startTime);
+    const [endHours, endMinutes] = tempValue.end.split(':').map(Number);
+    endDate.setHours(endHours, endMinutes);
+
+    // For existing breaks
+    if (typeof index === 'number' && index < session.pauses.length) {
+      const { error } = await supabase
+        .from('session_pauses')
+        .update({
+          start_time: startDate.toISOString(),
+          end_time: endDate.toISOString()
+        })
+        .eq('session_id', session.id)
+        .eq('start_time', session.pauses[index].startTime.toISOString());
+
+      if (!error) {
+        setState(prev => ({
+          ...prev,
+          sessions: prev.sessions.map(s => {
+            if (s.id !== session.id) return s;
+            const updatedPauses = [...s.pauses];
+            updatedPauses[index] = {
+              startTime: startDate,
+              endTime: endDate
+            };
+            return { ...s, pauses: updatedPauses };
+          })
+        }));
+      }
+    } else {
+      // For new breaks
+      const { error } = await supabase
+        .from('session_pauses')
+        .insert([{
+          session_id: session.id,
+          start_time: startDate.toISOString(),
+          end_time: endDate.toISOString()
+        }])
+        .select()
+        .single();
+
+      if (!error) {
+        setState(prev => ({
+          ...prev,
+          sessions: prev.sessions.map(s => {
+            if (s.id !== session.id) return s;
+            const newPause = {
+              startTime: startDate,
+              endTime: endDate
+            };
+            const updatedPauses = [...s.pauses, newPause];
+            return { ...s, pauses: updatedPauses };
+          })
+        }));
+      }
+    }
+    setEditingSession(null);
   };
 
   useEffect(() => {
@@ -440,271 +814,183 @@ export function Timer() {
   }, []);
 
   return (
-    <Container size="lg" px={{ base: 20, sm: 40 }} py={60}>
-      <Group position="apart" mb={40}>
-        <Text size="xl" weight={700} style={{ color: '#00b5a9' }}>
+    <div className="container">
+      <div className="header">
+        <h1 className="title">
           CashTimer
-        </Text>
-        <Button 
-          variant="subtle" 
-          color="gray" 
+        </h1>
+        <button 
+          className="btn btn-subtle"
           onClick={handleLogout}
         >
           Logout
-        </Button>
-      </Group>
-      <Stack spacing={40}>
-        <div style={{ 
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '40px',
-          padding: '30px',
-          background: '#1A1B1E',
-          borderRadius: '16px',
-          border: '1px solid #2C2E33'
-        }}>
-          {/* Rate Input */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <Text size="xs" weight={700} color="dimmed" style={{ letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '8px' }}>
-              RATE PER HOUR
-            </Text>
-            <NumberInput
-              value={state.hourlyRate}
-              onChange={(val) => setState(prev => ({ ...prev, hourlyRate: Number(val) || 0 }))}
-              min={0}
-              step={0.01}
-              disabled={state.isRunning}
-              size="md"
-              hideControls
-              styles={{
-                input: {
-                  fontSize: '1.8rem',
-                  textAlign: 'center',
-                  height: '50px',
-                  width: '100%',
-                  background: '#0e0f11',
-                  border: '2px solid #25272b',
-                  borderRadius: '12px',
-                  marginBottom: '24px',
-                  '&:focus': {
-                    borderColor: '#00c9b8',
-                    boxShadow: '0 0 0 3px rgba(0, 201, 184, 0.15)'
-                  }
-                }
-              }}
+        </button>
+      </div>
+      <div className="stack">
+        <div className="toggle-container">
+          <span className="toggle-label">Conversions</span>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={showConversions}
+              onChange={() => setShowConversions(prev => !prev)}
             />
+            <span className="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div className="grid-container">
+          {/* Rate Input */}
+          <div className="rate-container">
+            <span className="label">
+              RATE PER HOUR
+            </span>
+            <div className="rate-input-container">
+              <select
+                className="currency-select-small"
+                value={rateCurrency.code}
+                onChange={(e) => {
+                  const currency = CURRENCIES.find(c => c.code === e.target.value);
+                  if (currency) setRateCurrency(currency);
+                }}
+              >
+                {CURRENCIES.map(currency => (
+                  <option key={currency.code} value={currency.code}>
+                    {currency.flag}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                className="rate-input"
+                value={state.hourlyRate}
+                onChange={(e) => setState(prev => ({ ...prev, hourlyRate: Number(e.target.value) || 0 }))}
+                min="0"
+                step="0.01"
+                disabled={state.isRunning}
+              />
+            </div>
 
             {state.currentSession && (
               <>
-                <Text size="xs" weight={700} color="dimmed" style={{ letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '8px' }}>
+                <span className="label">
                   STARTED TIME
-                </Text>
+                </span>
                 {editingSession?.id === state.currentSession.id && editingSession.field === 'startTime' ? (
-                  <Stack spacing={4} style={{ width: '100%' }}>
+                  <div className="full-width">
                     <input
                       type="datetime-local"
+                      className="datetime-input"
                       defaultValue={format(state.currentSession.startTime, "yyyy-MM-dd'T'HH:mm")}
-                      style={{
-                        width: '100%',
-                        background: '#141517',
-                        border: '1px solid #2C2E33',
-                        borderRadius: '8px',
-                        padding: '8px 12px',
-                        color: '#C1C2C5',
-                        fontSize: '0.95rem'
-                      }}
                       onChange={(e) => {
-                        setEditingSession(prev => {
-                          if (!prev) return null;
-                          const tempValue = typeof prev.tempValue === 'string' ? { start: prev.tempValue } : prev.tempValue;
-                          return {
-                            ...prev,
-                            tempValue: {
-                              ...tempValue,
-                              start: e.target.value,
-                              end: tempValue.end || format(new Date(), "HH:mm")
-                            }
-                          };
-                        });
+                        const newStartTime = new Date(e.target.value);
+                        // Check if new start time would result in negative duration
+                        if (!isNaN(newStartTime.getTime()) && newStartTime > new Date()) {
+                          alert('Start time cannot be in the future');
+                          return;
+                        }
+                        setEditingSession(prev => prev ? {
+                          ...prev,
+                          tempValue: e.target.value
+                        } : null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          state.currentSession && handleSave('start', state.currentSession);
+                          const newStartTime = new Date(editingSession.tempValue as string);
+                          // Double check before saving
+                          if (!isNaN(newStartTime.getTime()) && newStartTime > new Date()) {
+                            alert('Start time cannot be in the future');
+                            return;
+                          }
+                          handleSave('start', state.currentSession);
                         }
                       }}
                       autoFocus
                     />
-                    <Group spacing={4}>
-                      <Button 
-                        size="xs" 
-                        variant="subtle" 
-                        color="teal"
-                        onClick={() => state.currentSession && handleSave('start', state.currentSession)}
-                      >
-                        Save
-                      </Button>
-                      <Button 
-                        size="xs" 
-                        variant="subtle" 
-                        color="red"
-                        onClick={() => setEditingSession(null)}
-                      >
-                        Cancel
-                      </Button>
-                    </Group>
-                  </Stack>
+                  </div>
                 ) : (
-                  <Text 
-                    size="lg" 
-                    weight={600}
+                  <span 
+                    className="clickable"
                     onClick={() => setEditingSession({ 
-                      id: state.currentSession?.id || '', 
-                      field: 'startTime',
-                      tempValue: format(state.currentSession?.startTime || new Date(), "HH:mm")
-                    })}
-                    sx={(theme) => ({
-                      cursor: 'pointer',
-                      '&:hover': {
-                        color: theme.colors.teal[4],
-                        textDecoration: 'underline'
-                      }
+                      id: state.currentSession.id, 
+                      field: 'startTime' 
                     })}
                   >
                     {format(state.currentSession.startTime, 'h:mm a')}
-                  </Text>
+                  </span>
                 )}
               </>
             )}
           </div>
 
           {/* Timer Display */}
-          <div style={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            transform: 'scale(1.1)',
-            transformOrigin: 'center'
-          }}>
+          <div className="timer-display">
             {state.currentSession && (
               <>
-                <Text 
-                  style={{ 
-                    fontSize: '4rem',
-                    fontWeight: 900,
-                    background: 'linear-gradient(135deg, #00e6d4 0%, #00b5a9 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    lineHeight: 0.9,
-                    marginBottom: '12px',
-                    letterSpacing: '-0.03em',
-                    textShadow: '0 0 40px rgba(0, 230, 212, 0.25)'
-                  }}
-                >
+                <span className="timer-amount">
                   ${state.currentSession.earnings.toFixed(2)}
-                </Text>
-                <Text 
-                  style={{
-                    fontSize: '2.5rem',
-                    fontWeight: 800,
-                    color: '#909296',
-                    letterSpacing: '-0.02em',
-                    marginBottom: '16px'
-                  }}
-                >
+                </span>
+                <span className="timer-duration">
                   {formatDuration(elapsedTime)}
-                </Text>
-                <Text size="md" color="dimmed" style={{ marginTop: 4 }}>
-                  {selectedCurrency.flag} {selectedCurrency.symbol}
-                  {Math.round(
-                    (state.currentSession?.earnings * exchangeRate[`USD${selectedCurrency.code}`]) * 100
-                  ) / 100}
-                </Text>
+                </span>
+                {showConversions && (
+                  <span className="label">
+                    {conversionCurrency.flag} {conversionCurrency.symbol}
+                    {(
+                      (state.currentSession?.earnings / exchangeRate[rateCurrency.code]) * 
+                      exchangeRate[conversionCurrency.code]
+                    ).toFixed(2)}
+                  </span>
+                )}
               </>
             )}
           </div>
 
           {/* Control Buttons */}
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="controls-container-vertical">
             {!state.currentSession ? (
-              <Button 
-                onClick={startTimer} 
-                size="lg"
-                radius="xl"
-                fullWidth
-                style={{ 
-                  background: 'linear-gradient(135deg, #00e6d4 0%, #00b5a9 100%)',
-                  border: 'none',
-                  boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
-                }}
+              <button
+                onClick={startTimer}
+                className="btn btn-primary btn-lg btn-full"
               >
+                <IconPlayerPlay size={20} />
                 Start Timer
-              </Button>
+              </button>
             ) : (
               !state.isPaused ? (
                 <>
-                  <Button 
+                  <button 
                     onClick={pauseTimer} 
-                    color="#ffd700" 
-                    size="lg"
-                    radius="xl"
-                    style={{ 
-                      flex: 1,
-                      background: 'linear-gradient(135deg, #ffd700 0%, #ffb700 100%)',
-                      border: 'none',
-                      boxShadow: '0 4px 24px rgba(255, 215, 0, 0.2)'
-                    }}
+                    className="btn btn-lg btn-warning"
                   >
+                    <IconPlayerPause size={20} />
                     Pause
-                  </Button>
-                  <CustomButton
-                    onClick={stopTimer}
-                    size="lg"
-                    radius="xl"
-                    fullWidth
-                    styles={{
-                      root: {
-                        background: '#1A1B1E',
-                        border: '1px solid #2C2E33',
-                        boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
-                      }
-                    }}
+                  </button>
+                  <button 
+                    onClick={stopTimer} 
+                    className="btn btn-danger btn-lg btn-full"
                   >
+                    <IconPlayerStop size={20} />
                     Stop
-                  </CustomButton>
+                  </button>
                 </>
               ) : (
                 <>
-                  <Button 
+                  <button 
                     onClick={resumeTimer} 
-                    color="#00b5a9" 
-                    size="lg"
-                    radius="xl"
-                    style={{ 
-                      flex: 1,
-                      background: 'linear-gradient(135deg, #00e6d4 0%, #00b5a9 100%)',
-                      border: 'none',
-                      boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
-                    }}
+                    className="btn btn-primary btn-lg btn-full"
                   >
+                    <IconPlayerPlay size={20} />
                     Resume
-                  </Button>
-                  <CustomButton
-                    onClick={stopTimer}
-                    size="lg"
-                    radius="xl"
-                    fullWidth
-                    styles={{
-                      root: {
-                        background: '#1A1B1E',
-                        border: '1px solid #2C2E33',
-                        boxShadow: '0 4px 24px rgba(0, 181, 169, 0.2)'
-                      }
-                    }}
+                  </button>
+                  <button 
+                    onClick={stopTimer} 
+                    className="btn btn-danger btn-lg btn-full"
                   >
+                    <IconPlayerStop size={20} />
                     Stop
-                  </CustomButton>
+                  </button>
                 </>
               )
             )}
@@ -712,64 +998,23 @@ export function Timer() {
         </div>
 
         {state.sessions.length > 0 && (
-          <Paper 
-            withBorder 
-            p={40} 
-            sx={(theme) => ({
-              position: 'relative',
-              overflow: 'hidden'
-            })}
-          >
-            <div style={{
-              position: 'absolute',
-              bottom: -100,
-              left: -100,
-              width: 300,
-              height: 300,
-              background: 'radial-gradient(circle, rgba(0,181,169,0.15) 0%, transparent 70%)',
-              zIndex: 0
-            }} />
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <Table 
-                striped 
-                highlightOnHover
-                style={{
-                  tableLayout: 'fixed',
-                  width: '100%',
-                  '--mantine-color-dark-filled': '#0e0f11',
-                  '--mantine-color-dark-filled-hover': '#141517',
-                  '&:hover': {
-                    color: '#00b5a9'
-                  }
-                } as any}
-              >
-                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                  <tr>
-                    <th style={{ ...tableHeaderStyle, width: '80px' }}>Breaks</th>
-                    <th style={{ ...tableHeaderStyle, width: '20%' }}>Start</th>
-                    <th style={{ ...tableHeaderStyle, width: '20%' }}>End</th>
-                    <th style={{ ...tableHeaderStyle, width: '15%' }}>Duration</th>
-                    <th style={{ ...tableHeaderStyle, width: '15%' }}>Earnings</th>
-                    <th style={{ ...tableHeaderStyle, width: '15%' }}>
+          <div className="paper">
+            <table className={`table ${!showConversions ? 'table-no-conversions' : ''}`}>
+              <thead>
+                <tr>
+                  <th className="table-header table-header-breaks">Breaks</th>
+                  <th className="table-header table-header-start">Start</th>
+                  <th className="table-header table-header-end">End</th>
+                  <th className="table-header table-header-duration">Duration</th>
+                  <th className="table-header table-header-earnings">Earnings</th>
+                  {showConversions && (
+                    <th className="table-header table-header-currency">
                       <select
-                        value={selectedCurrency.code}
+                        className="currency-select"
+                        value={conversionCurrency.code}
                         onChange={(e) => {
                           const currency = CURRENCIES.find(c => c.code === e.target.value);
-                          if (currency) setSelectedCurrency(currency);
-                        }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#909296',
-                          cursor: 'pointer',
-                          fontSize: '0.85rem',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.1em',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          margin: '0 auto',
-                          display: 'block'
+                          if (currency) setConversionCurrency(currency);
                         }}
                       >
                         {CURRENCIES.map(currency => (
@@ -779,708 +1024,426 @@ export function Timer() {
                         ))}
                       </select>
                     </th>
-                    <th style={{ ...tableHeaderStyle, width: '5%' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.sessions.map((session) => (
-                    <Fragment key={session.id}>
-                      <tr style={{ transition: 'all 0.2s ease' }}>
-                        <td style={{ ...tableCellStyle, width: '80px', padding: '20px 0 20px 24px', textAlign: 'left' }}>
-                          <div style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '8px' 
-                          }}>
-                            <ActionIcon 
-                              onClick={() => toggleRowExpansion(session.id)}
-                              variant="subtle"
-                              color="gray"
-                              style={{ opacity: 0.8 }}
-                            >
-                              {expandedRows.has(session.id) ? (
-                                <IconChevronDown size={16} />
-                              ) : (
-                                <IconChevronRight size={16} />
-                              )}
-                            </ActionIcon>
-                            <span style={{ 
-                              color: '#909296', 
-                              fontSize: '0.9rem',
-                              lineHeight: 1 
-                            }}>
-                              {session.pauses.length}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={tableCellStyle}>
-                          {editingSession?.id === session.id && editingSession.field === 'startTime' ? (
-                            <Stack spacing={4} style={{ width: '100%' }}>
-                              <input
-                                type="datetime-local"
-                                defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.start : editingSession.tempValue}
-                                style={{
-                                  width: '100%',
-                                  background: '#141517',
-                                  border: '1px solid #2C2E33',
-                                  borderRadius: '8px',
-                                  padding: '8px 12px',
-                                  color: '#C1C2C5',
-                                  fontSize: '0.95rem'
-                                }}
-                                onChange={(e) => {
-                                  setEditingSession(prev => {
-                                    if (!prev) return null;
-                                    const tempValue = typeof prev.tempValue === 'string' ? 
-                                      { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
-                                      prev.tempValue;
-                                    return {
-                                      ...prev,
-                                      tempValue: {
-                                        ...tempValue,
-                                        start: e.target.value,
-                                        end: tempValue.end || format(new Date(), "HH:mm")
-                                      }
-                                    };
-                                  });
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    state.currentSession && handleSave('start', state.currentSession);
-                                  }
-                                }}
-                                autoFocus
-                              />
-                              <Group spacing={4}>
-                                <Button 
-                                  size="xs" 
-                                  variant="subtle" 
-                                  color="teal"
-                                  onClick={() => state.currentSession && handleSave('start', state.currentSession)}
-                                >
-                                  Save
-                                </Button>
-                                <Button 
-                                  size="xs" 
-                                  variant="subtle" 
-                                  color="red"
-                                  onClick={() => setEditingSession(null)}
-                                >
-                                  Cancel
-                                </Button>
-                              </Group>
-                            </Stack>
-                          ) : (
-                            <Text 
-                              onClick={() => setEditingSession({ 
-                                id: session.id, 
-                                field: 'startTime',
-                                tempValue: format(session.startTime, "HH:mm")
-                              })}
-                              sx={(theme) => ({
-                                cursor: 'pointer',
-                                '&:hover': {
-                                  color: theme.colors.teal[4],
-                                  textDecoration: 'underline'
-                                }
-                              })}
-                            >
-                              {format(session.startTime, 'MMM d, h:mm a')}
-                            </Text>
-                          )}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {editingSession?.id === session.id && editingSession.field === 'endTime' ? (
-                            <Stack spacing={4} style={{ width: '100%' }}>
-                              <input
-                                type="datetime-local"
-                                defaultValue={session.endTime ? format(session.endTime, "yyyy-MM-dd'T'HH:mm") : ''}
-                                style={{
-                                  width: '100%',
-                                  background: '#141517',
-                                  border: '1px solid #2C2E33',
-                                  borderRadius: '8px',
-                                  padding: '8px 12px',
-                                  color: '#C1C2C5',
-                                  fontSize: '0.95rem'
-                                }}
-                                onChange={(e) => {
-                                  setEditingSession(prev => {
-                                    if (!prev) return null;
-                                    const tempValue = typeof prev.tempValue === 'string' ? 
-                                      { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
-                                      prev.tempValue;
-                                    return {
-                                      ...prev,
-                                      tempValue: {
-                                        ...tempValue,
-                                        end: e.target.value,
-                                        start: tempValue.start || format(new Date(), "HH:mm")
-                                      }
-                                    };
-                                  });
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    state.currentSession && handleSave('end', state.currentSession);
-                                  }
-                                }}
-                                autoFocus
-                              />
-                              <Group spacing={4}>
-                                <Button 
-                                  size="xs" 
-                                  variant="subtle" 
-                                  color="teal"
-                                  onClick={() => state.currentSession && handleSave('end', state.currentSession)}
-                                >
-                                  Save
-                                </Button>
-                                <Button 
-                                  size="xs" 
-                                  variant="subtle" 
-                                  color="red"
-                                  onClick={() => setEditingSession(null)}
-                                >
-                                  Cancel
-                                </Button>
-                              </Group>
-                            </Stack>
-                          ) : (
-                            <Text 
-                              onClick={() => setEditingSession({ 
-                                id: session.id, 
-                                field: 'endTime',
-                                tempValue: format(session.endTime || new Date(), "HH:mm")
-                              })}
-                              sx={(theme) => ({
-                                cursor: 'pointer',
-                                '&:hover': {
-                                  color: theme.colors.teal[4],
-                                  textDecoration: 'underline'
-                                }
-                              })}
-                            >
-                              {session.endTime ? format(session.endTime, 'MMM d, h:mm a') : '-'}
-                            </Text>
-                          )}
-                        </td>
-                        <td style={tableCellStyle}>
-                          {session.endTime ? (
-                            (() => {
-                              const totalTime = differenceInSeconds(session.endTime, session.startTime);
-                              const breakTime = session.pauses.reduce((acc, pause) => {
-                                const pauseEnd = pause.endTime || session.endTime!;
-                                return acc + differenceInSeconds(pauseEnd, pause.startTime);
-                              }, 0);
-                              return formatDuration(totalTime - breakTime);
-                            })()
-                          ) : '-'}
-                        </td>
-                        <td style={tableCellStyle}>
-                          <Text span style={{ color: '#909296', fontWeight: 600 }}>
-                            ${session.earnings.toFixed(2)}
-                          </Text>
-                        </td>
-                        <td style={tableCellStyle}>
-                          <Text span style={{ color: '#909296', fontWeight: 600 }}>
-                            {selectedCurrency.symbol}{(session.earnings * exchangeRate[selectedCurrency.code]).toFixed(2)}
-                          </Text>
-                        </td>
-                        <td style={tableCellStyle}>
-                          <ActionIcon 
-                            color="red" 
-                            onClick={() => deleteSession(session.id)}
-                            variant="light"
-                            size="lg"
-                            style={{
-                              margin: '0 auto',
-                              transition: 'all 0.2s ease',
-                              transform: editingSession ? 'scale(1.1)' : 'none',
-                              background: editingSession ? 'rgba(255, 71, 87, 0.15)' : 'transparent'
-                            }}
+                  )}
+                  <th className="table-header table-header-delete"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.sessions.map((session) => (
+                  <Fragment key={session.id}>
+                    <tr>
+                      <td className="cell cell-breaks">
+                        <div className="chevron-container">
+                          <button
+                            className="icon-button icon-button-dim"
+                            onClick={() => toggleRowExpansion(session.id)}
                           >
-                            <IconTrash size={20} />
-                          </ActionIcon>
-                        </td>
-                      </tr>
-                      
-                      {/* Expandable Pause Details */}
-                      {expandedRows.has(session.id) && (
-                        <tr>
-                          <td colSpan={7} style={{ 
-                            padding: '16px 24px',
-                            backgroundColor: '#141517'
-                          }}>
-                            <Stack spacing="md">
-                              {session.pauses.map((pause, index) => (
-                                <Group key={index} position="apart" align="center" style={{ 
-                                  padding: '12px 16px',
-                                  background: '#1A1B1E',
-                                  borderRadius: '8px',
-                                  border: '1px solid #2C2E33'
-                                }}>
-                                  <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    gap: '12px',
-                                    width: '100%'
-                                  }}>
-                                    <ActionIcon
-                                      color="red"
-                                      variant="subtle"
-                                      size="sm"
-                                      onClick={async () => {
-                                        // Delete from database
-                                        const { error } = await supabase
-                                          .from('session_pauses')
-                                          .delete()
-                                          .eq('session_id', session.id)
-                                          .eq('start_time', pause.startTime.toISOString());
-
-                                        if (!error) {
-                                          // Update local state
-                                          setState(prev => ({
-                                            ...prev,
-                                            sessions: prev.sessions.map(s => {
-                                              if (s.id !== session.id) return s;
-                                              
-                                              const updatedPauses = s.pauses.filter((_, i) => i !== index);
-                                              
-                                              // Recalculate earnings without this break
-                                              const totalTime = s.endTime ? 
-                                                (s.endTime.getTime() - s.startTime.getTime()) : 
-                                                (new Date().getTime() - s.startTime.getTime());
-                                              const breakTime = updatedPauses.reduce((acc, p) => {
-                                                const pEnd = p.endTime || new Date();
-                                                return acc + (pEnd.getTime() - p.startTime.getTime());
-                                              }, 0);
-                                              const activeTime = totalTime - breakTime;
-                                              const newEarnings = (activeTime / 3600000) * s.hourlyRate;
-
-                                              return { 
-                                                ...s, 
-                                                pauses: updatedPauses,
-                                                earnings: newEarnings
-                                              };
-                                            })
-                                          }));
-                                        }
-                                      }}
-                                    >
-                                      <IconTrash size={14} />
-                                    </ActionIcon>
-
-                                    {editingSession?.id === session.id && editingSession.field === `pause-${index}` ? (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <input
-                                          type="time"
-                                          defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.start : editingSession.tempValue}
-                                          style={{
-                                            width: '110px',
-                                            background: '#0e0f11',
-                                            border: '1px solid #2C2E33',
-                                            borderRadius: '6px',
-                                            padding: '4px 8px',
-                                            color: '#C1C2C5',
-                                            fontSize: '0.9rem'
-                                          }}
-                                          onChange={(e) => {
-                                            setEditingSession(prev => {
-                                              if (!prev) return null;
-                                              const tempValue = typeof prev.tempValue === 'string' ? 
-                                                { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
-                                                prev.tempValue;
-                                              return {
-                                                ...prev,
-                                                tempValue: {
-                                                  ...tempValue,
-                                                  start: e.target.value,
-                                                  end: tempValue.end || format(new Date(), "HH:mm")
-                                                }
-                                              };
-                                            });
-                                          }}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                              e.preventDefault();
-                                              state.currentSession && handleSave('break', state.currentSession, index);
-                                            }
-                                          }}
-                                        />
-                                        <Text>-</Text>
-                                        <input
-                                          type="time"
-                                          defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.end : editingSession.tempValue}
-                                          style={{
-                                            width: '110px',
-                                            background: '#0e0f11',
-                                            border: '1px solid #2C2E33',
-                                            borderRadius: '6px',
-                                            padding: '4px 8px',
-                                            color: '#C1C2C5',
-                                            fontSize: '0.9rem'
-                                          }}
-                                          onChange={(e) => {
-                                            setEditingSession(prev => {
-                                              if (!prev) return null;
-                                              const tempValue = typeof prev.tempValue === 'string' ? 
-                                                { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
-                                                prev.tempValue;
-                                              return {
-                                                ...prev,
-                                                tempValue: {
-                                                  ...tempValue,
-                                                  end: e.target.value,
-                                                  start: tempValue.start || format(new Date(), "HH:mm")
-                                                }
-                                              };
-                                            });
-                                          }}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                              e.preventDefault();
-                                              state.currentSession && handleSave('break', state.currentSession, index);
-                                            }
-                                          }}
-                                        />
-                                        <Group spacing={4}>
-                                          <Button 
-                                            size="xs" 
-                                            variant="subtle" 
-                                            color="teal"
-                                            onClick={() => state.currentSession && handleSave('break', state.currentSession, index)}
-                                          >
-                                            Save
-                                          </Button>
-                                          <Button 
-                                            size="xs" 
-                                            variant="subtle" 
-                                            color="red"
-                                            onClick={() => setEditingSession(null)}
-                                          >
-                                            Cancel
-                                          </Button>
-                                        </Group>
-                                      </div>
-                                    ) : (
-                                      <Text 
-                                        onClick={() => setEditingSession({ 
-                                          id: session.id, 
-                                          field: `pause-${index}`,
-                                          tempValue: format(pause.startTime, "HH:mm")
-                                        })}
-                                        sx={(theme) => ({
-                                          cursor: 'pointer',
-                                          '&:hover': {
-                                            color: theme.colors.teal[4],
-                                            textDecoration: 'underline'
-                                          }
-                                        })}
-                                      >
-                                        {format(pause.startTime, 'h:mm a')} - {pause.endTime ? format(pause.endTime, 'h:mm a') : 'Ongoing'}
-                                        <Text component="span" size="xs" color="dimmed" ml={8}>
-                                          ({pause.endTime ? 
-                                            `${Math.round(differenceInSeconds(pause.endTime, pause.startTime) / 60)}min` : 
-                                            'In progress'})
-                                        </Text>
-                                      </Text>
-                                    )}
-                                  </div>
-                                </Group>
-                              ))}
-
-                              {editingSession?.id === session.id && editingSession.field === 'pause-new' ? (
-                                <Group 
-                                  spacing={8}
-                                  style={{ 
-                                    width: '100%',
-                                    display: 'flex',
-                                    flexDirection: 'column' as const
-                                  }}
-                                >
-                                  <input
-                                    type="time"
-                                    defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.start : editingSession.tempValue}
-                                    style={{
-                                      width: '110px',
-                                      background: '#0e0f11',
-                                      border: '1px solid #2C2E33',
-                                      borderRadius: '6px',
-                                      padding: '4px 8px',
-                                      color: '#C1C2C5',
-                                      fontSize: '0.9rem'
-                                    }}
-                                    onChange={(e) => {
-                                      setEditingSession(prev => {
-                                        if (!prev) return null;
-                                        const tempValue = typeof prev.tempValue === 'string' ? 
-                                          { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
-                                          prev.tempValue;
-                                        return {
-                                          ...prev,
-                                          tempValue: {
-                                            ...tempValue,
-                                            start: e.target.value,
-                                            end: tempValue.end || format(new Date(), "HH:mm")
-                                          }
-                                        };
-                                      });
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        state.currentSession && handleSave('break', state.currentSession, session.pauses.length);
-                                      }
-                                    }}
-                                  />
-                                  <Text>-</Text>
-                                  <input
-                                    type="time"
-                                    defaultValue={typeof editingSession.tempValue === 'object' ? editingSession.tempValue.end : editingSession.tempValue}
-                                    style={{
-                                      width: '110px',
-                                      background: '#0e0f11',
-                                      border: '1px solid #2C2E33',
-                                      borderRadius: '6px',
-                                      padding: '4px 8px',
-                                      color: '#C1C2C5',
-                                      fontSize: '0.9rem'
-                                    }}
-                                    onChange={(e) => {
-                                      setEditingSession(prev => {
-                                        if (!prev) return null;
-                                        const tempValue = typeof prev.tempValue === 'string' ? 
-                                          { start: prev.tempValue, end: format(new Date(), "HH:mm") } : 
-                                          prev.tempValue;
-                                        return {
-                                          ...prev,
-                                          tempValue: {
-                                            ...tempValue,
-                                            end: e.target.value,
-                                            start: tempValue.start || format(new Date(), "HH:mm")
-                                          }
-                                        };
-                                      });
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        state.currentSession && handleSave('break', state.currentSession, session.pauses.length);
-                                      }
-                                    }}
-                                  />
-                                  <Group spacing={4}>
-                                    <Button 
-                                      size="xs" 
-                                      variant="subtle" 
-                                      color="teal"
-                                      onClick={() => state.currentSession && handleSave('break', state.currentSession, session.pauses.length)}
-                                    >
-                                      Save
-                                    </Button>
-                                    <Button 
-                                      size="xs" 
-                                      variant="subtle" 
-                                      color="red"
-                                      onClick={() => setEditingSession(null)}
-                                    >
-                                      Cancel
-                                    </Button>
-                                  </Group>
-                                </Group>
-                              ) : (
-                                <Group position="apart" mt={8}>
-                                  <Button
-                                    size="xs"
-                                    variant="subtle"
-                                    color="gray"
-                                    onClick={() => addBreak(session.id)}
-                                    leftIcon={<IconPlus size={14} />}
-                                    style={{ fontWeight: 500 }}
-                                  >
-                                    Add Break
-                                  </Button>
-                                  {session.pauses.length > 0 && (
-                                    <Text size="sm" color="dimmed" weight={500}>
-                                      Total Break Time: {Math.round(session.pauses.reduce((acc, pause) => {
-                                        const end = pause.endTime || new Date();
-                                        return acc + differenceInSeconds(end, pause.startTime);
-                                      }, 0) / 60)}min
-                                    </Text>
-                                  )}
-                                </Group>
-                              )}
-                            </Stack>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
-          </Paper>
-        )}
-
-        {summaryModalOpen && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.85)',
-              backdropFilter: 'blur(8px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 9999
-            }}
-            onClick={() => setSummaryModalOpen(false)}
-          >
-            <Paper
-              p={40}
-              radius="xl"
-              style={{
-                width: '500px',
-                background: 'linear-gradient(155deg, #1A1B1E 0%, #141517 100%)',
-                boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5)',
-                border: '1px solid #2C2E33',
-                position: 'relative',
-                overflow: 'hidden'
-              }}
-              onClick={e => e.stopPropagation()}
-            >
-              <div style={{
-                position: 'absolute',
-                bottom: -100,
-                left: -100,
-                width: 300,
-                height: 300,
-                background: 'radial-gradient(circle, rgba(0,181,169,0.15) 0%, transparent 70%)',
-                zIndex: 0
-              }} />
-              <div style={{ position: 'relative', zIndex: 1 }}>
-                <Stack spacing={32} align="center">
-                  <Text 
-                    size="xl" 
-                    weight={700}
-                    color="dimmed"
-                    style={{ 
-                      letterSpacing: '0.1em', 
-                      textTransform: 'uppercase',
-                      fontFeatureSettings: '"calt" off, "liga" off'
-                    }}
-                  >
-                    Session Summary
-                  </Text>
-                  <Text 
-                    size="3.5rem" 
-                    weight={800} 
-                    style={{ 
-                      background: 'linear-gradient(135deg, #00e6d4 0%, #00b5a9 100%)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                      lineHeight: 1,
-                      textShadow: '0 0 25px rgba(0, 230, 212, 0.15)'
-                    }}
-                  >
-                    ${completedSession?.earnings.toFixed(2)}
-                  </Text>
-                  <Paper 
-                    withBorder 
-                    p={32}
-                    radius="lg" 
-                    style={{ 
-                      width: '100%',
-                      backgroundColor: '#141517',
-                      border: '1px solid #2C2E33'
-                    }}
-                  >
-                    <Stack spacing={24}>
-                      <Group position="apart">
-                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Duration</Text>
-                        <Text size="md" weight={600}>
-                          {completedSession?.endTime && (() => {
-                            const totalTime = differenceInSeconds(completedSession.endTime, completedSession.startTime);
-                            const breakTime = completedSession.pauses.reduce((acc, pause) => {
-                              const pauseEnd = pause.endTime || completedSession.endTime!;
+                            {expandedRows.has(session.id) ? (
+                              <IconChevronDown size={16} />
+                            ) : (
+                              <IconChevronRight size={16} />
+                            )}
+                          </button>
+                          <span className="break-count">
+                            {session.pauses.length}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        {editingSession?.id === session.id && editingSession.field === 'startTime' ? (
+                          <div className="full-width">
+                            <input
+                              type="datetime-local"
+                              className="datetime-input"
+                              defaultValue={format(session.startTime, "yyyy-MM-dd'T'HH:mm")}
+                              onChange={(e) => {
+                                setEditingSession(prev => prev ? {
+                                  ...prev,
+                                  tempValue: e.target.value  // Just store the raw value
+                                } : null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSave('start', session);
+                                }
+                              }}
+                              autoFocus
+                            />
+                          </div>
+                        ) : (
+                          <span 
+                            className="clickable"
+                            onClick={() => setEditingSession({ 
+                              id: session.id, 
+                              field: 'startTime' 
+                            })}
+                          >
+                            {format(session.startTime, 'MMM d, h:mm a')}
+                          </span>
+                        )}
+                      </td>
+                      <td className="table-cell">
+                        {editingSession?.id === session.id && editingSession.field === 'endTime' ? (
+                          <div className="full-width">
+                            <input
+                              type="datetime-local"
+                              className="datetime-input"
+                              defaultValue={session.endTime ? format(session.endTime, "yyyy-MM-dd'T'HH:mm") : ''}
+                              onChange={(e) => {
+                                setEditingSession(prev => prev ? {
+                                  ...prev,
+                                  tempValue: e.target.value  // Just store the raw value
+                                } : null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSave('end', session);
+                                }
+                              }}
+                              autoFocus
+                            />
+                          </div>
+                        ) : (
+                          <span 
+                            className="clickable"
+                            onClick={() => setEditingSession({ 
+                              id: session.id, 
+                              field: 'endTime' 
+                            })}
+                          >
+                            {session.endTime ? format(session.endTime, 'MMM d, h:mm a') : '-'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="table-cell">
+                        {session.endTime ? (
+                          (() => {
+                            const totalTime = differenceInSeconds(session.endTime, session.startTime);
+                            const breakTime = session.pauses.reduce((acc, pause) => {
+                              const pauseEnd = pause.endTime || session.endTime!;
                               return acc + differenceInSeconds(pauseEnd, pause.startTime);
                             }, 0);
                             return formatDuration(totalTime - breakTime);
-                          })()}
-                        </Text>
-                      </Group>
-                      
-                      <Group position="apart">
-                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Start Time</Text>
-                        <Text size="md" weight={600}>
-                          {completedSession && format(completedSession.startTime, 'h:mm a')}
-                        </Text>
-                      </Group>
-                      
-                      <Group position="apart">
-                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>End Time</Text>
-                        <Text size="md" weight={600}>
-                          {completedSession?.endTime && format(completedSession.endTime, 'h:mm a')}
-                        </Text>
-                      </Group>
-                      
-                      <Group position="apart">
-                        <Text size="sm" color="dimmed" sx={{ letterSpacing: '0.05em' }}>Rate</Text>
-                        <Text size="md" weight={600}>
-                          ${completedSession?.hourlyRate}/hr
-                        </Text>
-                      </Group>
-                    </Stack>
-                  </Paper>
+                          })()
+                        ) : '-'}
+                      </td>
+                      <td className="table-cell">
+                        <span className="table-value">
+                          {rateCurrency.symbol}{session.earnings.toFixed(2)}
+                        </span>
+                      </td>
+                      {showConversions && (
+                        <td className="table-cell">
+                          <span className="table-value">
+                            {conversionCurrency.symbol}{(
+                              (session.earnings / exchangeRate[rateCurrency.code]) * 
+                              exchangeRate[conversionCurrency.code]
+                            ).toFixed(2)}
+                          </span>
+                        </td>
+                      )}
+                      <td className="table-cell">
+                        <button
+                          className="icon-button icon-button-delete"
+                          onClick={() => deleteSession(session.id)}
+                        >
+                          <IconTrash size={20} />
+                        </button>
+                      </td>
+                    </tr>
+                    
+                    {/* Expandable Pause Details */}
+                    {expandedRows.has(session.id) && (
+                      <tr>
+                        <td colSpan={7} className="expanded-cell">
+                          <div className="stack">
+                            {session.pauses.map((pause, index) => (
+                              <div key={index} className="group group-apart">
+                                <div className="group-item">
+                                  <button
+                                    className="icon-button"
+                                    onClick={async () => {
+                                      // Delete from database
+                                      const { error } = await supabase
+                                        .from('session_pauses')
+                                        .delete()
+                                        .eq('session_id', session.id)
+                                        .eq('start_time', pause.startTime.toISOString());
 
-                  <Button 
-                    fullWidth 
-                    onClick={() => setSummaryModalOpen(false)} 
-                    color="teal"
-                    size="xl"
-                    radius="xl"
-                    sx={{
-                      height: '56px',
-                      fontSize: '1.1rem',
-                      fontWeight: 600
-                    }}
-                  >
-                    Close
-                  </Button>
-                </Stack>
-              </div>
-            </Paper>
+                                      if (!error) {
+                                        // Update local state
+                                        setState(prev => ({
+                                          ...prev,
+                                          sessions: prev.sessions.map(s => {
+                                            if (s.id !== session.id) return s;
+                                            
+                                            const updatedPauses = s.pauses.filter((_, i) => i !== index);
+                                            
+                                            // Recalculate earnings without this break
+                                            const totalTime = s.endTime ? 
+                                              (s.endTime.getTime() - s.startTime.getTime()) : 
+                                              (new Date().getTime() - s.startTime.getTime());
+                                            const breakTime = updatedPauses.reduce((acc, p) => {
+                                              const pEnd = p.endTime || new Date();
+                                              return acc + (pEnd.getTime() - p.startTime.getTime());
+                                            }, 0);
+                                            const activeTime = totalTime - breakTime;
+                                            const newEarnings = (activeTime / 3600000) * s.hourlyRate;
+
+                                            return { 
+                                              ...s, 
+                                              pauses: updatedPauses,
+                                              earnings: newEarnings
+                                            };
+                                          })
+                                        }));
+                                      }
+                                    }}
+                                  >
+                                    <IconTrash size={14} />
+                                  </button>
+
+                                  {editingSession?.id === session.id && editingSession.field === `pause-${index}` ? (
+                                    <div className="group group-item">
+                                      <input
+                                        type="time"
+                                        className="datetime-input"
+                                        defaultValue={format(pause.startTime, "HH:mm")}
+                                        onChange={(e) => {
+                                          setEditingSession(prev => prev ? {
+                                            ...prev,
+                                            tempValue: { 
+                                              ...prev.tempValue as EditValue,
+                                              start: e.target.value,
+                                              end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
+                                            }
+                                          } : null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSave('break', session, index);
+                                          }
+                                        }}
+                                      />
+                                      <span>-</span>
+                                      <input
+                                        type="time"
+                                        className="datetime-input"
+                                        defaultValue={pause.endTime ? format(pause.endTime, "HH:mm") : ''}
+                                        onChange={(e) => {
+                                          setEditingSession(prev => prev ? {
+                                            ...prev,
+                                            tempValue: { 
+                                              ...prev.tempValue as EditValue,
+                                              end: e.target.value,
+                                              start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
+                                            }
+                                          } : null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSave('break', session, index);
+                                          }
+                                        }}
+                                      />
+                                      <div className="group group-item">
+                                        <button 
+                                          className="btn btn-xs btn-subtle btn-teal"
+                                          onClick={() => handleSave('break', session, index)}
+                                        >
+                                          Save
+                                        </button>
+                                        <button 
+                                          className="btn btn-xs btn-subtle btn-red"
+                                          onClick={() => setEditingSession(null)}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span 
+                                      className="clickable"
+                                      onClick={() => setEditingSession({ 
+                                        id: session.id, 
+                                        field: `pause-${index}`,
+                                        tempValue: {
+                                          start: format(pause.startTime, "HH:mm"),
+                                          end: pause.endTime ? format(pause.endTime, "HH:mm") : format(new Date(), "HH:mm")
+                                        }
+                                      })}
+                                    >
+                                      {format(pause.startTime, 'h:mm a')} - {pause.endTime ? format(pause.endTime, 'h:mm a') : 'Ongoing'}
+                                      <span className="label label-dimmed">
+                                        ({pause.endTime ? 
+                                          `${Math.round(differenceInSeconds(pause.endTime, pause.startTime) / 60)}min` : 
+                                          'In progress'})
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+
+                            {editingSession?.id === session.id && editingSession.field === 'pause-new' ? (
+                              <div className="group group-item">
+                                <input
+                                  type="time"
+                                  className="datetime-input"
+                                  defaultValue={editingSession.tempValue?.start}
+                                  onChange={(e) => {
+                                    setEditingSession(prev => prev ? {
+                                      ...prev,
+                                      tempValue: { 
+                                        ...prev.tempValue as any,
+                                        start: e.target.value,
+                                        end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
+                                      }
+                                    } : null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSave('break', session, session.pauses.length);
+                                    }
+                                  }}
+                                />
+                                <span>-</span>
+                                <input
+                                  type="time"
+                                  className="datetime-input"
+                                  defaultValue={editingSession.tempValue?.end}
+                                  onChange={(e) => {
+                                    setEditingSession(prev => prev ? {
+                                      ...prev,
+                                      tempValue: { 
+                                        ...prev.tempValue as any,
+                                        end: e.target.value,
+                                        start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
+                                      }
+                                    } : null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSave('break', session, session.pauses.length);
+                                    }
+                                  }}
+                                />
+                                <div className="group group-item">
+                                  <button 
+                                    className="btn btn-xs btn-subtle btn-teal"
+                                    onClick={() => handleSave('break', session, session.pauses.length)}
+                                  >
+                                    Save
+                                  </button>
+                                  <button 
+                                    className="btn btn-xs btn-subtle btn-red"
+                                    onClick={() => setEditingSession(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="group group-item">
+                                <button
+                                  className="btn btn-xs btn-subtle btn-gray btn-text"
+                                  onClick={() => addBreak(session.id)}
+                                >
+                                  <IconPlus size={14} />
+                                  Add Break
+                                </button>
+                                {session.pauses.length > 0 && (
+                                  <span className="label label-medium">
+                                    Total Break Time: {Math.round(session.pauses.reduce((acc, pause) => {
+                                      const end = pause.endTime || new Date();
+                                      return acc + differenceInSeconds(end, pause.startTime);
+                                    }, 0) / 60)}min
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-      </Stack>
-    </Container>
+
+        {summaryModalOpen && (
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <div className="stack">
+                <div className="summary-title">
+                  <span>You've Made:</span>
+                  <span className="summary-amount">
+                    ${completedSession?.earnings.toFixed(2)}
+                  </span>
+                  {completedSession?.pauses.length > 0 && (
+                    <span className="summary-breaks">
+                      with {completedSession.pauses.length} break{completedSession.pauses.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="paper">
+                  <div className="stack">
+                    <div className="group group-apart">
+                      <span className="label label-bold">Duration</span>
+                      <span className="label" style={{ fontWeight: 600 }}>
+                        {completedSession?.endTime && (() => {
+                          const totalTime = differenceInSeconds(completedSession.endTime, completedSession.startTime);
+                          const breakTime = completedSession.pauses.reduce((acc, pause) => {
+                            const pauseEnd = pause.endTime || completedSession.endTime!;
+                            return acc + differenceInSeconds(pauseEnd, pause.startTime);
+                          }, 0);
+                          return formatDuration(totalTime - breakTime);
+                        })()}
+                      </span>
+                    </div>
+                    
+                    <div className="group group-apart">
+                      <span className="label label-bold">Start Time</span>
+                      <span className="label" style={{ fontWeight: 600 }}>
+                        {completedSession && format(completedSession.startTime, 'h:mm a')}
+                      </span>
+                    </div>
+                    
+                    <div className="group group-apart">
+                      <span className="label label-bold">End Time</span>
+                      <span className="label" style={{ fontWeight: 600 }}>
+                        {completedSession?.endTime && format(completedSession.endTime, 'h:mm a')}
+                      </span>
+                    </div>
+                    
+                    <div className="group group-apart">
+                      <span className="label label-bold">Rate</span>
+                      <span className="label" style={{ fontWeight: 600 }}>
+                        ${completedSession?.hourlyRate}/hr
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  className="btn btn-primary btn-xl btn-full"
+                  onClick={() => setSummaryModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
-}
-
-const tableHeaderStyle = {
-  width: '100%',
-  padding: '12px 16px',
-  color: '#C1C2C5',
-  fontWeight: 500,
-  fontSize: '0.9rem',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.1em',
-  background: '#1A1B1E',
-  borderBottom: '1px solid #2C2E33',
-  backdropFilter: 'blur(10px)',
-  textAlign: 'center' as const
-};
-
-const tableCellStyle = {
-  padding: '20px 24px',
-  fontSize: '0.95rem',
-  color: '#C1C2C5',
-  borderBottom: '1px solid rgba(44, 46, 51, 0.5)',
-  textAlign: 'center' as const
-}; 
+} 
