@@ -153,6 +153,9 @@ export function Timer() {
   };
 
   const startTimer = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     const session: TimerSession = {
       id: crypto.randomUUID(),
       startTime: new Date(),
@@ -165,6 +168,7 @@ export function Timer() {
       .from('timer_sessions')
       .insert({
         id: session.id,
+        user_id: user.id,
         start_time: session.startTime.toISOString(),
         hourly_rate: session.hourlyRate,
         earnings: 0
