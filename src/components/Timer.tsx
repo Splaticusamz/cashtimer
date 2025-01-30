@@ -124,6 +124,21 @@ export function Timer() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        // Sign in anonymously if no user
+        const { error } = await signInAnonymously();
+        if (error) {
+          console.error('Error signing in:', error);
+        }
+      }
+    };
+    
+    checkAuth();
+  }, []);
+
   const fetchSessions = async () => {
     const { data: sessionsData, error } = await supabase
       .from('timer_sessions')
