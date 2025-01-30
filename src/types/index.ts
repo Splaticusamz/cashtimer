@@ -1,3 +1,11 @@
+export interface TimerState {
+  isRunning: boolean;
+  isPaused: boolean;
+  currentSession: TimerSession | null;
+  sessions: TimerSession[];
+  hourlyRate: number;
+}
+
 export interface TimerSession {
   id: string;
   startTime: Date;
