@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
-import { format, parse, differenceInMinutes, differenceInSeconds } from 'date-fns';
+import { format, parse, differenceInMinutes, differenceInSeconds, startOfWeek, format as dateFnsFormat, differenceInHours } from 'date-fns';
 import confetti from 'canvas-confetti';
 import type { TimerState, TimerSession, EditingSession, EditingSessionValue, ExchangeRate, SessionPause, Currency } from '../types/index';
 import { IconTrash, IconEdit, IconClock, IconPlayerPause, IconPlayerStop, IconPlayerPlay, IconChevronDown, IconChevronRight, IconPlus } from '@tabler/icons-react';
@@ -54,6 +54,7 @@ export function Timer() {
   const [showConversions, setShowConversions] = useState(true);
   const [rateCurrency, setRateCurrency] = useState<Currency>(CURRENCIES[0]);
   const [conversionCurrency, setConversionCurrency] = useState<Currency>(CURRENCIES[0]);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const calculateEarnings = useCallback((session: TimerSession | null) => {
     if (!session) return 0;
@@ -761,6 +762,29 @@ export function Timer() {
     }));
   };
 
+  const groupSessionsByWeek = (sessions: TimerSession[]) => {
+    const grouped: { [key: string]: TimerSession[] } = {};
+    
+    sessions
+      .sort((a, b) => sortOrder === 'asc' 
+        ? a.startTime.getTime() - b.startTime.getTime()
+        : b.startTime.getTime() - a.startTime.getTime()
+      )
+      .forEach(session => {
+        const weekStart = startOfWeek(session.startTime, { weekStartsOn: 1 });
+        const weekKey = dateFnsFormat(weekStart, 'yyyy-MM-dd');
+        
+        if (!grouped[weekKey]) {
+          grouped[weekKey] = [];
+        }
+        grouped[weekKey].push(session);
+      });
+
+    return grouped;
+  };
+
+  const weeklyGroups = groupSessionsByWeek(state.sessions);
+
   return (
     <div className="container">
       <div className="header">
@@ -951,7 +975,12 @@ export function Timer() {
               <thead>
                 <tr>
                   <th className="table-header table-header-breaks">Breaks</th>
-                  <th className="table-header table-header-start">Start</th>
+                  <th 
+                    className="table-header table-header-start clickable"
+                    onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  >
+                    Start
+                  </th>
                   <th className="table-header table-header-end">End</th>
                   <th className="table-header table-header-duration">Duration</th>
                   <th className="table-header table-header-earnings">Earnings</th>
@@ -977,193 +1006,311 @@ export function Timer() {
                 </tr>
               </thead>
               <tbody>
-                {state.sessions.map((session) => (
-                  <Fragment key={session.id}>
-                    <tr>
-                      <td className="cell cell-breaks">
-                        <div className="chevron-container">
-                          <button
-                            className="icon-button icon-button-dim"
-                            onClick={() => toggleRowExpansion(session.id)}
-                          >
-                            {expandedRows.has(session.id) ? (
-                              <IconChevronDown size={16} />
-                            ) : (
-                              <IconChevronRight size={16} />
-                            )}
-                          </button>
-                          <span className="break-count">
-                            {session.pauses.length}
-                          </span>
-                        </div>
-                    </td>
-                      <td className="table-cell">
-                        {editingSession?.id === session.id && editingSession.field === 'startTime' ? (
-                          <div className="full-width">
-                            <input
-                              type="datetime-local"
-                              className="datetime-input"
-                              defaultValue={format(session.startTime, "yyyy-MM-dd'T'HH:mm")}
-                              onChange={(e) => {
-                                setEditingSession(prev => prev ? {
-                                  ...prev,
-                                  tempValue: e.target.value  // Just store the raw value
-                                } : null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleSave('start', session);
-                                }
-                              }}
-                              autoFocus
-                            />
-                          </div>
-                        ) : (
-                          <span 
-                            className="clickable"
-                            onClick={() => setEditingSession({ 
-                              id: session.id, 
-                              field: 'startTime' 
-                            })}
-                          >
-                            {format(session.startTime, 'MMM d, h:mm a')}
-                          </span>
-                        )}
-                    </td>
-                      <td className="table-cell">
-                        {editingSession?.id === session.id && editingSession.field === 'endTime' ? (
-                          <div className="full-width">
-                            <input
-                              type="datetime-local"
-                              className="datetime-input"
-                              defaultValue={session.endTime ? format(session.endTime, "yyyy-MM-dd'T'HH:mm") : ''}
-                              onChange={(e) => {
-                                setEditingSession(prev => prev ? {
-                                  ...prev,
-                                  tempValue: e.target.value  // Just store the raw value
-                                } : null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleSave('end', session);
-                                }
-                              }}
-                              autoFocus
-                            />
-                          </div>
-                        ) : (
-                          <span 
-                            className="clickable"
-                            onClick={() => setEditingSession({ 
-                              id: session.id, 
-                              field: 'endTime' 
-                            })}
-                          >
-                            {session.endTime ? format(session.endTime, 'MMM d, h:mm a') : '-'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="table-cell">
-                        {session.endTime ? (
-                          (() => {
-                            const totalTime = differenceInSeconds(session.endTime, session.startTime);
-                            const breakTime = session.pauses.reduce((acc, pause) => {
-                              const pauseEnd = pause.endTime || session.endTime!;
-                              return acc + differenceInSeconds(pauseEnd, pause.startTime);
-                            }, 0);
-                            return formatDuration(totalTime - breakTime);
-                          })()
-                        ) : '-'}
-                      </td>
-                      <td className="table-cell">
-                        <span className="table-value">
-                          {rateCurrency.symbol}{session.earnings.toFixed(2)}
-                        </span>
-                      </td>
-                      {showConversions && (
-                        <td className="table-cell">
-                          <span className="table-value">
+                {Object.entries(weeklyGroups).map(([weekStart, weekSessions]) => {
+                  const weekTotal = weekSessions.reduce((acc, session) => acc + session.earnings, 0);
+                  const weekDuration = weekSessions.reduce((acc, session) => {
+                    const end = session.endTime || new Date();
+                    return acc + (differenceInSeconds(end, session.startTime) - 
+                      session.pauses.reduce((pauseAcc, pause) => {
+                        const pauseEnd = pause.endTime || end;
+                        return pauseAcc + differenceInSeconds(pauseEnd, pause.startTime);
+                      }, 0));
+                  }, 0);
+
+                  return (
+                    <Fragment key={weekStart}>
+                      {/* Week Total Row */}
+                      <tr className="total-row">
+                        <td colSpan={3} className="text-bold" style={{ textAlign: 'right' }}>
+                          Week of {dateFnsFormat(new Date(weekStart), 'MMM d')}:
+                        </td>
+                        <td className="text-bold">{formatDuration(weekDuration)}</td>
+                        <td className="text-bold">
+                          {rateCurrency.symbol}{weekTotal.toFixed(2)}
+                        </td>
+                        {showConversions && (
+                          <td className="text-bold">
                             {conversionCurrency.symbol}{(
-                              (session.earnings / exchangeRate[rateCurrency.code]) * 
+                              (weekTotal / exchangeRate[rateCurrency.code]) * 
                               exchangeRate[conversionCurrency.code]
                             ).toFixed(2)}
-                          </span>
-                        </td>
-                      )}
-                      <td className="table-cell">
-                        <button
-                          className="icon-button icon-button-delete"
-                          onClick={() => deleteSession(session.id)}
-                        >
-                          <IconTrash size={20} />
-                        </button>
-                      </td>
-                    </tr>
-                    
-                    {/* Expandable Pause Details */}
-                    {expandedRows.has(session.id) && (
-                      <tr>
-                        <td colSpan={7} className="expanded-cell">
-                          <div className="stack">
-                            {session.pauses.map((pause, index) => (
-                              <div key={index} className="group group-apart">
-                                <div className="group-item">
-                                  <button
-                                    className="icon-button"
-                                    onClick={async () => {
-                                      // Delete from database
-                                      const { error } = await supabase
-                                        .from('session_pauses')
-                                        .delete()
-                                        .eq('session_id', session.id)
-                                        .eq('start_time', pause.startTime.toISOString());
+                          </td>
+                        )}
+                        <td></td>
+                      </tr>
 
-                                      if (!error) {
-                                        // Update local state
-                                        setState(prev => ({
-                                          ...prev,
-                                          sessions: prev.sessions.map(s => {
-                                            if (s.id !== session.id) return s;
-                                            
-                                            const updatedPauses = s.pauses.filter((_, i) => i !== index);
-                                            
-                                            // Recalculate earnings without this break
-                                            const totalTime = s.endTime ? 
-                                              (s.endTime.getTime() - s.startTime.getTime()) : 
-                                              (new Date().getTime() - s.startTime.getTime());
-                                            const breakTime = updatedPauses.reduce((acc, p) => {
-                                              const pEnd = p.endTime || new Date();
-                                              return acc + (pEnd.getTime() - p.startTime.getTime());
-                                            }, 0);
-                                            const activeTime = totalTime - breakTime;
-                                            const newEarnings = (activeTime / 3600000) * s.hourlyRate;
-
-                                            return { 
-                                              ...s, 
-                                              pauses: updatedPauses,
-                                              earnings: newEarnings
-                                            };
-                                          })
-                                        }));
+                      {/* Sessions */}
+                      {weekSessions.map((session) => (
+                        <Fragment key={session.id}>
+                          <tr>
+                            <td className="cell cell-breaks">
+                              <div className="chevron-container">
+                                <button
+                                  className="icon-button icon-button-dim"
+                                  onClick={() => toggleRowExpansion(session.id)}
+                                >
+                                  {expandedRows.has(session.id) ? (
+                                    <IconChevronDown size={16} />
+                                  ) : (
+                                    <IconChevronRight size={16} />
+                                  )}
+                                </button>
+                                <span className="break-count">
+                                  {session.pauses.length}
+                                </span>
+                              </div>
+                          </td>
+                            <td className="table-cell">
+                              {editingSession?.id === session.id && editingSession.field === 'startTime' ? (
+                                <div className="full-width">
+                                  <input
+                                    type="datetime-local"
+                                    className="datetime-input"
+                                    defaultValue={format(session.startTime, "yyyy-MM-dd'T'HH:mm")}
+                                    onChange={(e) => {
+                                      setEditingSession(prev => prev ? {
+                                        ...prev,
+                                        tempValue: e.target.value  // Just store the raw value
+                                      } : null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleSave('start', session);
                                       }
                                     }}
-                                  >
-                                    <IconTrash size={14} />
-                                  </button>
+                                    autoFocus
+                                  />
+                                </div>
+                              ) : (
+                                <span 
+                                  className="clickable"
+                                  onClick={() => setEditingSession({ 
+                                    id: session.id, 
+                                    field: 'startTime' 
+                                  })}
+                                >
+                                  {format(session.startTime, 'MMM d, h:mm a')}
+                                </span>
+                              )}
+                          </td>
+                            <td className="table-cell">
+                              {editingSession?.id === session.id && editingSession.field === 'endTime' ? (
+                                <div className="full-width">
+                                  <input
+                                    type="datetime-local"
+                                    className="datetime-input"
+                                    defaultValue={session.endTime ? format(session.endTime, "yyyy-MM-dd'T'HH:mm") : ''}
+                                    onChange={(e) => {
+                                      setEditingSession(prev => prev ? {
+                                        ...prev,
+                                        tempValue: e.target.value  // Just store the raw value
+                                      } : null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleSave('end', session);
+                                      }
+                                    }}
+                                    autoFocus
+                                  />
+                                </div>
+                              ) : (
+                                <span 
+                                  className="clickable"
+                                  onClick={() => setEditingSession({ 
+                                    id: session.id, 
+                                    field: 'endTime' 
+                                  })}
+                                >
+                                  {session.endTime ? format(session.endTime, 'MMM d, h:mm a') : '-'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="table-cell">
+                              {session.endTime ? (
+                                (() => {
+                                  const totalTime = differenceInSeconds(session.endTime, session.startTime);
+                                  const breakTime = session.pauses.reduce((acc, pause) => {
+                                    const pauseEnd = pause.endTime || session.endTime!;
+                                    return acc + differenceInSeconds(pauseEnd, pause.startTime);
+                                  }, 0);
+                                  return formatDuration(totalTime - breakTime);
+                                })()
+                              ) : '-'}
+                            </td>
+                            <td className="table-cell">
+                              <span className="table-value">
+                                {rateCurrency.symbol}{session.earnings.toFixed(2)}
+                              </span>
+                            </td>
+                            {showConversions && (
+                              <td className="table-cell">
+                                <span className="table-value">
+                                  {conversionCurrency.symbol}{(
+                                    (session.earnings / exchangeRate[rateCurrency.code]) * 
+                                    exchangeRate[conversionCurrency.code]
+                                  ).toFixed(2)}
+                                </span>
+                              </td>
+                            )}
+                            <td className="table-cell">
+                              <button
+                                className="icon-button icon-button-delete"
+                                onClick={() => deleteSession(session.id)}
+                              >
+                                <IconTrash size={20} />
+                              </button>
+                            </td>
+                          </tr>
+                          
+                          {/* Expandable Pause Details */}
+                          {expandedRows.has(session.id) && (
+                            <tr>
+                              <td colSpan={7} className="expanded-cell">
+                                <div className="stack">
+                                  {session.pauses.map((pause, index) => (
+                                    <div key={index} className="group group-apart">
+                                      <div className="group-item">
+                                        <button
+                                          className="icon-button"
+                                          onClick={async () => {
+                                            // Delete from database
+                                            const { error } = await supabase
+                                              .from('session_pauses')
+                                              .delete()
+                                              .eq('session_id', session.id)
+                                              .eq('start_time', pause.startTime.toISOString());
 
-                                  {editingSession?.id === session.id && editingSession.field === `pause-${index}` ? (
+                                            if (!error) {
+                                              // Update local state
+                                              setState(prev => ({
+                                                ...prev,
+                                                sessions: prev.sessions.map(s => {
+                                                  if (s.id !== session.id) return s;
+                                                  
+                                                  const updatedPauses = s.pauses.filter((_, i) => i !== index);
+                                                  
+                                                  // Recalculate earnings without this break
+                                                  const totalTime = s.endTime ? 
+                                                    (s.endTime.getTime() - s.startTime.getTime()) : 
+                                                    (new Date().getTime() - s.startTime.getTime());
+                                                  const breakTime = updatedPauses.reduce((acc, p) => {
+                                                    const pEnd = p.endTime || new Date();
+                                                    return acc + (pEnd.getTime() - p.startTime.getTime());
+                                                  }, 0);
+                                                  const activeTime = totalTime - breakTime;
+                                                  const newEarnings = (activeTime / 3600000) * s.hourlyRate;
+
+                                                  return { 
+                                                    ...s, 
+                                                    pauses: updatedPauses,
+                                                    earnings: newEarnings
+                                                  };
+                                                })
+                                              }));
+                                            }
+                                          }}
+                                        >
+                                          <IconTrash size={14} />
+                                        </button>
+
+                                        {editingSession?.id === session.id && editingSession.field === `pause-${index}` ? (
+                                          <div className="group group-item">
+                                            <input
+                                              type="time"
+                                              className="datetime-input"
+                                              defaultValue={format(pause.startTime, "HH:mm")}
+                                              onChange={(e) => {
+                                                setEditingSession(prev => prev ? {
+                                                  ...prev,
+                                                  tempValue: { 
+                                                    ...prev.tempValue as EditValue,
+                                                    start: e.target.value,
+                                                    end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
+                                                  }
+                                                } : null);
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                  e.preventDefault();
+                                                  handleSave('break', session, index);
+                                                }
+                                              }}
+                                            />
+                                            <span>-</span>
+                                            <input
+                                              type="time"
+                                              className="datetime-input"
+                                              defaultValue={pause.endTime ? format(pause.endTime, "HH:mm") : ''}
+                                              onChange={(e) => {
+                                                setEditingSession(prev => prev ? {
+                                                  ...prev,
+                                                  tempValue: { 
+                                                    ...prev.tempValue as EditValue,
+                                                    end: e.target.value,
+                                                    start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
+                                                  }
+                                                } : null);
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                  e.preventDefault();
+                                                  handleSave('break', session, index);
+                                                }
+                                              }}
+                                            />
+                                            <div className="group group-item">
+                                              <button 
+                                                className="btn btn-xs btn-subtle btn-teal"
+                                                onClick={() => handleSave('break', session, index)}
+                                              >
+                                                Save
+                                              </button>
+                                              <button 
+                                                className="btn btn-xs btn-subtle btn-red"
+                                                onClick={() => setEditingSession(null)}
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span 
+                                            className="clickable"
+                                            onClick={() => setEditingSession({ 
+                                              id: session.id, 
+                                              field: `pause-${index}`,
+                                              tempValue: {
+                                                start: format(pause.startTime, "HH:mm"),
+                                                end: pause.endTime ? format(pause.endTime, "HH:mm") : format(new Date(), "HH:mm")
+                                              }
+                                            })}
+                                          >
+                                            {format(pause.startTime, 'h:mm a')} - {pause.endTime ? format(pause.endTime, 'h:mm a') : 'Ongoing'}
+                                            <span className="label label-dimmed">
+                                              ({pause.endTime ? 
+                                                `${Math.round(differenceInSeconds(pause.endTime, pause.startTime) / 60)}min` : 
+                                                'In progress'})
+                                            </span>
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {editingSession?.id === session.id && editingSession.field === 'pause-new' ? (
                                     <div className="group group-item">
                                       <input
                                         type="time"
                                         className="datetime-input"
-                                        defaultValue={format(pause.startTime, "HH:mm")}
+                                        defaultValue={editingSession.tempValue?.start}
                                         onChange={(e) => {
                                           setEditingSession(prev => prev ? {
                                             ...prev,
                                             tempValue: { 
-                                              ...prev.tempValue as EditValue,
+                                              ...prev.tempValue as any,
                                               start: e.target.value,
                                               end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
                                             }
@@ -1172,7 +1319,7 @@ export function Timer() {
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
                                             e.preventDefault();
-                                            handleSave('break', session, index);
+                                            handleSave('break', session, session.pauses.length);
                                           }
                                         }}
                                       />
@@ -1180,12 +1327,12 @@ export function Timer() {
                                       <input
                                         type="time"
                                         className="datetime-input"
-                                        defaultValue={pause.endTime ? format(pause.endTime, "HH:mm") : ''}
+                                        defaultValue={editingSession.tempValue?.end}
                                         onChange={(e) => {
                                           setEditingSession(prev => prev ? {
                                             ...prev,
                                             tempValue: { 
-                                              ...prev.tempValue as EditValue,
+                                              ...prev.tempValue as any,
                                               end: e.target.value,
                                               start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
                                             }
@@ -1194,14 +1341,14 @@ export function Timer() {
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
                                             e.preventDefault();
-                                            handleSave('break', session, index);
+                                            handleSave('break', session, session.pauses.length);
                                           }
                                         }}
                                       />
                                       <div className="group group-item">
                                         <button 
                                           className="btn btn-xs btn-subtle btn-teal"
-                                          onClick={() => handleSave('break', session, index)}
+                                          onClick={() => handleSave('break', session, session.pauses.length)}
                                         >
                                           Save
                                         </button>
@@ -1214,114 +1361,33 @@ export function Timer() {
                                       </div>
                                     </div>
                                   ) : (
-                                    <span 
-                                      className="clickable"
-                                      onClick={() => setEditingSession({ 
-                                        id: session.id, 
-                                        field: `pause-${index}`,
-                                        tempValue: {
-                                          start: format(pause.startTime, "HH:mm"),
-                                          end: pause.endTime ? format(pause.endTime, "HH:mm") : format(new Date(), "HH:mm")
-                                        }
-                                      })}
-                                    >
-                                      {format(pause.startTime, 'h:mm a')} - {pause.endTime ? format(pause.endTime, 'h:mm a') : 'Ongoing'}
-                                      <span className="label label-dimmed">
-                                        ({pause.endTime ? 
-                                          `${Math.round(differenceInSeconds(pause.endTime, pause.startTime) / 60)}min` : 
-                                          'In progress'})
-                                      </span>
-                                    </span>
+                                    <div className="group group-item">
+                                      <button
+                                        className="btn btn-xs btn-subtle btn-gray btn-text"
+                                        onClick={() => addBreak(session.id)}
+                                      >
+                                        <IconPlus size={14} />
+                                        Add Break
+                                      </button>
+                                      {session.pauses.length > 0 && (
+                                        <span className="label label-medium">
+                                          Total Break Time: {Math.round(session.pauses.reduce((acc, pause) => {
+                                            const end = pause.endTime || new Date();
+                                            return acc + differenceInSeconds(end, pause.startTime);
+                                          }, 0) / 60)}min
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-                            ))}
-
-                            {editingSession?.id === session.id && editingSession.field === 'pause-new' ? (
-                              <div className="group group-item">
-                                <input
-                                  type="time"
-                                  className="datetime-input"
-                                  defaultValue={editingSession.tempValue?.start}
-                                  onChange={(e) => {
-                                    setEditingSession(prev => prev ? {
-                                      ...prev,
-                                      tempValue: { 
-                                        ...prev.tempValue as any,
-                                        start: e.target.value,
-                                        end: prev.tempValue?.end || format(new Date(), "HH:mm")  // Keep existing end time or use current time
-                                      }
-                                    } : null);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      handleSave('break', session, session.pauses.length);
-                                    }
-                                  }}
-                                />
-                                <span>-</span>
-                                <input
-                                  type="time"
-                                  className="datetime-input"
-                                  defaultValue={editingSession.tempValue?.end}
-                                  onChange={(e) => {
-                                    setEditingSession(prev => prev ? {
-                                      ...prev,
-                                      tempValue: { 
-                                        ...prev.tempValue as any,
-                                        end: e.target.value,
-                                        start: prev.tempValue?.start || format(new Date(), "HH:mm")  // Keep existing start time or use current time
-                                      }
-                                    } : null);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      handleSave('break', session, session.pauses.length);
-                                    }
-                                  }}
-                                />
-                                <div className="group group-item">
-                                  <button 
-                                    className="btn btn-xs btn-subtle btn-teal"
-                                    onClick={() => handleSave('break', session, session.pauses.length)}
-                                  >
-                                    Save
-                                  </button>
-                                  <button 
-                                    className="btn btn-xs btn-subtle btn-red"
-                                    onClick={() => setEditingSession(null)}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="group group-item">
-                                <button
-                                  className="btn btn-xs btn-subtle btn-gray btn-text"
-                                  onClick={() => addBreak(session.id)}
-                                >
-                                  <IconPlus size={14} />
-                                  Add Break
-                                </button>
-                                {session.pauses.length > 0 && (
-                                  <span className="label label-medium">
-                                    Total Break Time: {Math.round(session.pauses.reduce((acc, pause) => {
-                                      const end = pause.endTime || new Date();
-                                      return acc + differenceInSeconds(end, pause.startTime);
-                                    }, 0) / 60)}min
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

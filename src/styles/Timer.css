@@ -432,11 +432,17 @@
 
 .clickable {
   cursor: pointer;
+  transition: color 0.2s ease;
 }
 
 .clickable:hover {
   color: #00b5a9;
-  text-decoration: underline;
+}
+
+.table-header-start {
+  padding: 18px 24px !important;
+  text-align: center;
+  user-select: none;
 }
 
 .btn-text {
@@ -645,4 +651,32 @@ input:checked + .toggle-slider {
 input:checked + .toggle-slider:before {
   transform: translateX(22px);
   background-color: white;
+}
+
+/* Add these styles */
+.total-row {
+  background-color: #25272b;
+  border-top: 2px solid #2C2E33;
+  border-bottom: 2px solid #2C2E33;
+}
+
+.total-row td {
+  padding: 20px 24px !important;
+  text-align: center !important;
+  border-bottom: 1px solid rgba(44, 46, 51, 0.5);
+}
+
+.total-row td:first-child {
+  text-align: right !important;
+  padding-right: 24px !important;
+}
+
+.text-bold {
+  font-weight: 700 !important;
+}
+
+/* Remove flex styles from header */
+.table-header {
+  display: table-cell;
+  vertical-align: middle;
 } 
