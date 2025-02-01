@@ -55,6 +55,7 @@ export function Timer() {
   const [rateCurrency, setRateCurrency] = useState<Currency>(CURRENCIES[0]);
   const [conversionCurrency, setConversionCurrency] = useState<Currency>(CURRENCIES[0]);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [toast, setToast] = useState("");
 
   const calculateEarnings = useCallback((session: TimerSession | null) => {
     if (!session) return 0;
@@ -545,6 +546,10 @@ export function Timer() {
     fetchSessions();
   }, []);
 
+  useEffect(() => {
+    document.title = "CashTimer - Motivate yourself with $$$";
+  }, []);
+
   // Fix EditingSession state updates
   const handleTimeEdit = (id: string, field: EditingSession['field']) => {
     setEditingSession({
@@ -784,6 +789,37 @@ export function Timer() {
   };
 
   const weeklyGroups = groupSessionsByWeek(state.sessions);
+
+  // ADD: New function for copying invoicing data
+  const handleCopyForInvoicing = async (weekSessions: any, weekStart: string) => {
+    let grandTotal = 0;
+    const lines: string[] = [];
+    lines.push("Date\tDuration\tTotal");
+    weekSessions.forEach((session: any) => {
+      const end: Date = session.endTime ? new Date(session.endTime) : new Date();
+      const breakTime = session.pauses.reduce((acc: number, pause: any) => {
+        const pauseEnd = pause.endTime ? new Date(pause.endTime) : end;
+        return acc + differenceInSeconds(pauseEnd, new Date(pause.startTime));
+      }, 0);
+      const totalTime = differenceInSeconds(end, new Date(session.startTime)) - breakTime;
+      const hours = totalTime / 3600;
+      const roundedHours = Math.ceil(hours * 4) / 4;
+      const cost = roundedHours * session.hourlyRate;
+      grandTotal += cost;
+      lines.push(`${format(new Date(session.startTime), "yyyy-MM-dd")}\t${roundedHours}\t$${cost.toFixed(0)}`);
+    });
+    lines.push("\t\tGrand Total");
+    lines.push(`\t\t$${grandTotal.toFixed(0)}`);
+    const tableText = lines.join("\n");
+    try {
+      await navigator.clipboard.writeText(tableText);
+      setToast("Data Copied!");
+      setTimeout(() => setToast(""), 2000);
+    } catch (err) {
+      setToast("Failed to copy data");
+      setTimeout(() => setToast(""), 2000);
+    }
+  };
 
   return (
     <div className="container">
@@ -1025,18 +1061,17 @@ export function Timer() {
                           Week of {dateFnsFormat(new Date(weekStart), 'MMM d')}:
                         </td>
                         <td className="text-bold">{formatDuration(weekDuration)}</td>
-                        <td className="text-bold">
-                          {rateCurrency.symbol}{weekTotal.toFixed(2)}
-                        </td>
+                        <td className="text-bold">${weekTotal.toFixed(2)}</td>
                         {showConversions && (
                           <td className="text-bold">
-                            {conversionCurrency.symbol}{(
-                              (weekTotal / exchangeRate[rateCurrency.code]) * 
-                              exchangeRate[conversionCurrency.code]
-                            ).toFixed(2)}
+                            {conversionCurrency.symbol}{((weekTotal / exchangeRate[rateCurrency.code]) * exchangeRate[conversionCurrency.code]).toFixed(2)}
                           </td>
                         )}
-                        <td></td>
+                        <td>
+                          <button className="btn btn-primary btn-xs" onClick={() => handleCopyForInvoicing(weekSessions, weekStart)}>
+                            Copy for invoicing
+                          </button>
+                        </td>
                       </tr>
 
                       {/* Sessions */}
@@ -1458,6 +1493,20 @@ export function Timer() {
           </div>
         )}
       </div>
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          padding: '10px 20px',
+          background: '#333',
+          color: 'white',
+          borderRadius: '4px',
+          opacity: 0.9
+        }}>
+          {toast}
+        </div>
+      )}
     </div>
   );
 } 
